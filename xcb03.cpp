@@ -31,15 +31,29 @@
 using namespace std;
 using namespace cv;
 
-int main(int argc, char **argv)
+class XorgGrabber
 {
-	xcb_connection_t* conn;
+	public:
+		XorgGrabber(const char* win_title);
+		~XorgGrabber();
+		void read(Mat& mat);
+	
+	private:
+		xcb_connection_t* conn;
+		xcb_window_t grabbed_win;
+		int grab_width, grab_height;
+		xcb_screen_t* grab_screen;
+		xcb_get_image_reply_t* img;
+
+};
+
+XorgGrabber::XorgGrabber(const char* win_title)
+{
 	conn=xcb_connect(NULL,NULL);
 	
 	bool found_win=false;
-	xcb_window_t grabbed_win;
-	int grab_width, grab_height;
-	xcb_screen_t* grab_screen=NULL;
+	grab_screen=NULL;
+	img=NULL;
 	
 	/* Find configured screen */
 	const xcb_setup_t* setup = xcb_get_setup(conn);
@@ -70,7 +84,7 @@ int main(int argc, char **argv)
 				{
 					char* title=(char*)(title_reply+1);
 					cout << title << endl;
-					if (strstr(title, "Mupen64Plus OpenGL Video"))
+					if (strstr(title, win_title))
 					{
 						xcb_get_geometry_reply_t* geo;
 						geo = xcb_get_geometry_reply (conn, xcb_get_geometry (conn, children[i]), NULL);
@@ -162,27 +176,44 @@ int main(int argc, char **argv)
 		
 		free(img);
 		
-		while(1)
-		{
-			img = xcb_get_image_reply (conn,
-			xcb_get_image (conn, XCB_IMAGE_FORMAT_Z_PIXMAP, grabbed_win,
-				0, 0, grab_width, grab_height, ~0), NULL);
-
-			Mat meh(grab_height, grab_width, CV_8UC4, xcb_get_image_data(img));
-			namedWindow("meh");
-			imshow("meh", meh);
-			waitKey(50);
-			
-			free(img);
-
-		}
-		
 	}
 	else
-		cerr << "FATAL: did not find window, exiting." << endl;
+	{
+		throw string("FATAL: did not find window, exiting.");
+	}
 	
 	
-	xcb_disconnect(conn);
-	return 0;
 }
 
+XorgGrabber::~XorgGrabber()
+{
+	if (img) free(img);
+	xcb_disconnect(conn);
+}
+
+void XorgGrabber::read(Mat& mat)
+{
+	if (img) free(img);
+
+
+	// mat gets invalid when the next read() is called!
+	img = xcb_get_image_reply (conn,
+	xcb_get_image (conn, XCB_IMAGE_FORMAT_Z_PIXMAP, grabbed_win,
+		0, 0, grab_width, grab_height, ~0), NULL);
+	
+	mat = Mat(grab_height, grab_width, CV_8UC4, xcb_get_image_data(img));
+}
+
+int main()
+{
+	XorgGrabber grabber("Mupen64Plus OpenGL Video");
+	
+	namedWindow("meh");
+	Mat meh;
+	while(1)
+	{
+		grabber.read(meh);
+		imshow("meh",meh);
+		waitKey(100);
+	}
+}
