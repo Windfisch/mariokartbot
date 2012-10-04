@@ -405,6 +405,9 @@ int main(int argc, char* argv[])
   
   Mat img_eroded(img_thres.rows, img_thres.cols, img_thres.type());
   Mat img_thres2(img_thres.rows, img_thres.cols, img_thres.type());
+  Mat img_stddev(img_thres.rows, img_thres.cols, img_thres.type());
+  img_stddev=Mat::zeros(img_thres.rows, img_thres.cols,  img_thres.type());
+  
   erode(img_thres, img_eroded, Mat::ones(3, 3, CV_8U));
   dilate(img_eroded, img_thres2, Mat::ones(3, 3, CV_8U));
   
@@ -455,21 +458,21 @@ int main(int argc, char* argv[])
 		stddev_line=sqrt(variance_line);
 		if (mean_value_line>1 && mean_value_line < img.cols-2)
 		{
-			img_thres2.ptr<uchar>(row)[mean_value_line-1]=128;
-			img_thres2.ptr<uchar>(row)[mean_value_line]=128;
-			img_thres2.ptr<uchar>(row)[mean_value_line+1]=128;
+			img_stddev.ptr<uchar>(row)[mean_value_line-1]=255;
+			img_stddev.ptr<uchar>(row)[mean_value_line]=255;
+			img_stddev.ptr<uchar>(row)[mean_value_line+1]=255;
 		}
 		if ((mean_value_line+stddev_line)>1 && (mean_value_line+stddev_line) < img.cols-2)
 		{
-			img_thres2.ptr<uchar>(row)[mean_value_line-1+stddev_line]=128;
-			img_thres2.ptr<uchar>(row)[mean_value_line+stddev_line]=128;
-			img_thres2.ptr<uchar>(row)[mean_value_line+1+stddev_line]=128;
+			img_stddev.ptr<uchar>(row)[mean_value_line-1+stddev_line]=255;
+			img_stddev.ptr<uchar>(row)[mean_value_line+stddev_line]=255;
+			img_stddev.ptr<uchar>(row)[mean_value_line+1+stddev_line]=255;
 		}
 		if ((mean_value_line-stddev_line)>1 && (mean_value_line-stddev_line) < img.cols-2)
 		{
-			img_thres2.ptr<uchar>(row)[mean_value_line-1-stddev_line]=128;
-			img_thres2.ptr<uchar>(row)[mean_value_line-stddev_line]=128;
-			img_thres2.ptr<uchar>(row)[mean_value_line+1-stddev_line]=128;
+			img_stddev.ptr<uchar>(row)[mean_value_line-1-stddev_line]=255;
+			img_stddev.ptr<uchar>(row)[mean_value_line-stddev_line]=255;
+			img_stddev.ptr<uchar>(row)[mean_value_line+1-stddev_line]=255;
 		}
 	}
   }
@@ -501,6 +504,7 @@ int main(int argc, char* argv[])
   imshow("diff", img_diff);
   imshow("hist", img_hist);
   imshow("thres", img_thres2);
+  imshow("stddev", img_stddev);
   
   waitKey(1000/50);
   //waitKey();
