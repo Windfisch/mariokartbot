@@ -205,6 +205,111 @@ void XorgGrabber::read(Mat& mat)
 	mat.addref();
 }
 
+
+
+class Joystick
+{
+	public:
+		Joystick();
+		~Joystick();
+		
+		void steer(float dir);
+		void throttle(float t);
+		
+		void process();
+		
+	private:
+		float throt;
+		int throttle_cnt;
+		
+		int fd;
+};
+
+Joystick::Joystick()
+{
+	fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
+	if(fd < 0) {
+		cerr << "open failed" << endl;
+		exit(EXIT_FAILURE);
+	}
+	
+	int ret;
+	
+	ret=ioctl(fd, UI_SET_EVBIT, EV_KEY);
+	ret=ioctl(fd, UI_SET_EVBIT, EV_SYN);
+	ret=ioctl(fd, UI_SET_KEYBIT	, BTN_A);
+	ioctl(fd, UI_SET_EVBIT, EV_ABS);
+	ioctl(fd, UI_SET_ABSBIT, ABS_X);
+	ioctl(fd, UI_SET_ABSBIT, ABS_Y);
+	
+	struct uinput_user_dev meh;
+	memset(&meh,0,sizeof(meh));
+	
+	strcpy(meh.name, "flotest");
+	meh.id.bustype=BUS_USB;
+	meh.id.vendor=0xdead;
+	meh.id.product=0xbeef;
+	meh.id.version=1;
+	meh.absmin[ABS_X]=0;
+	meh.absmax[ABS_X]=10000;
+	meh.absmin[ABS_Y]=0;
+	meh.absmax[ABS_Y]=10000;
+	
+	
+	ret=write(fd, &meh, sizeof(meh));
+	
+	ioctl(fd,UI_DEV_CREATE);
+	
+
+	struct input_event ev;
+	ev.type=EV_ABS;
+	ev.code=ABS_Y;
+	ev.value=5000+dir*5000;
+	write(fd, &ev, sizeof(ev));
+
+	steer(0);
+	throttle(0);
+	process();
+}
+
+Joystick::~Joystick()
+{
+	ioctl(fd, UI_DEV_DESTROY);
+	close(fd);
+}
+
+void Joystick::steer(float dir)
+{
+	if (dir<-1.0) dir=-1.0;
+	if (dir>1.0) dir=1.0;
+	
+	struct input_event ev;
+	ev.type=EV_ABS;
+	ev.code=ABS_X;
+	ev.value=5000+dir*5000;
+	write(fd, &ev, sizeof(ev));
+}
+
+void Joystick::throttle(float t)
+{
+	if (t<0.0) t=0.0;
+	if (t>1.0) t=1.0;
+	
+	throt=t;
+}
+
+void Joystick::process()
+{
+	throttle_cnt++;
+	if (throttle_cnt>THROTTLE_CNT_MAX) throttle_cnt=0;
+	
+	struct input_event ev;
+	ev.type=EV_KEY;
+	ev.code=BTN_A;
+	ev.value =  (throttle_cnt < throt*THROTTLE_CNT_MAX) ? 1 : 0;
+	write(fd, &ev, sizeof(ev));
+}
+
 /*
 int main()
 {
@@ -224,7 +329,7 @@ int main()
 
 #define HIST_SMOOTH 7
 
- //#define NO_BRIGHTN/SS // will man nicht, nur zu demonstrationszwecken
+//#define NO_BRIGHTNESS // will man nicht, nur zu demonstrationszwecken
 
 #define ERODE_RADIUS_2D 4
 
@@ -250,9 +355,23 @@ Mat circle_mat(int radius)
   return result;
 }
 
+
+
+int crosshair_x=0, crosshair_y=0;
+
+void mouse_callback(int event, int x, int y, int flags, void* userdata)
+{
+	if (event==EVENT_LBUTTONDOWN)
+	{
+		crosshair_x=x;
+		crosshair_y=y;
+	}
+}
+
+
 int main(int argc, char* argv[])
 {
-	XorgGrabber capture("Mupen64Plus OpenGL Video");
+  XorgGrabber capture("Mupen64Plus OpenGL Video");
 
   int road_0=77, road_1=77, road_2=77;
   
@@ -261,30 +380,19 @@ int main(int argc, char* argv[])
   bool first=true;
   int xlen, ylen;
   
-  Mat erode_2d(ERODE_RADIUS_2D*2+1, ERODE_RADIUS_2D*2+1, CV_8U);
-  for (int x=0; x<=erode_2d.cols/2; x++)
-    for (int y=0; y<=erode_2d.rows/2; y++)
-    {
-      unsigned char& p1 = erode_2d.at<unsigned char>(erode_2d.cols/2 + x, erode_2d.rows/2 + y);
-      unsigned char& p2 = erode_2d.at<unsigned char>(erode_2d.cols/2 - x, erode_2d.rows/2 + y);
-      unsigned char& p3 = erode_2d.at<unsigned char>(erode_2d.cols/2 + x, erode_2d.rows/2 - y);
-      unsigned char& p4 = erode_2d.at<unsigned char>(erode_2d.cols/2 - x, erode_2d.rows/2 - y);
-      
-      if ( x*x + y*y < ERODE_RADIUS_2D*ERODE_RADIUS_2D )
-        p1=p2=p3=p4=255;
-      else
-        p1=p2=p3=p4=0;
-    }
+  Mat erode_2d_big=circle_mat(10);
   
   #define trans_width 600
   #define trans_height 400
   #define road_width 100
   
+  namedWindow("edit");
+  setMouseCallback("edit", mouse_callback, NULL);
+  
   while(1)
   {
     
   Mat img_;
-
   capture.read(img_);
   
   if (first)
@@ -301,16 +409,13 @@ int main(int argc, char* argv[])
     first=false;
   }
   assert ((img_.cols==xlen) && (img_.rows==ylen));
-  
-  namedWindow("orig");
-  namedWindow("edit");
-  
+    
   Mat img, img2;
   img_.convertTo(img, CV_8UC3, 1); //FINDMICH
   img.copyTo(img2);
   
   #ifdef NO_BRIGHTNESS
-  assert(img2.type()==CV_8UC3);
+  //assert(img2.type()==CV_8UC3);
   for (int row = 0; row<img2.rows; row++)
   {
     uchar* data=img2.ptr<uchar>(row);
@@ -330,13 +435,13 @@ int main(int argc, char* argv[])
         data[1]=255/3;
         data[2]=255/3;
       }
-      data+=3;
+      data+=img2.step[1];
     }
   }
   #endif
   
   
-  Mat img_diff(img.rows, img.cols, CV_8U);
+  Mat img_diff(img2.rows, img2.cols, CV_8U);
   int hist[256];
   for (int i=0; i<256; i++) hist[i]=0;
   for (int row = 0; row<img2.rows; row++)
@@ -347,9 +452,10 @@ int main(int argc, char* argv[])
     for (int col=0; col<img2.cols;col++)
     {
       int diff = (abs((int)data[0] - road_0) + abs((int)data[1] - road_1) + abs((int)data[2] - road_2)) /3;
+      if (diff>255) { cout << "error, diff is" << diff << endl; diff=255; }
       *data_out=diff;
       hist[diff]++;
-      data+=3;
+      data+=img2.step[1];
       data_out++;
     }
   }
@@ -371,7 +477,7 @@ int main(int argc, char* argv[])
   for (x_begin=0;x_begin<256;x_begin++)
   {
     cumul+=hist[x_begin];
-    if (cumul > img.rows*img.cols/100) break;
+    if (cumul > img2.rows*img2.cols/100) break;
   }
   
   int hist_max=0;
@@ -410,33 +516,43 @@ int main(int argc, char* argv[])
   
   erode(img_thres, img_eroded, Mat::ones(3, 3, CV_8U));
   dilate(img_eroded, img_thres2, Mat::ones(3, 3, CV_8U));
-  
+  dilate(img_thres2, img_eroded, erode_2d_big);
+  erode(img_eroded, img_thres2, erode_2d_big);
   
   assert(img.rows==img_eroded.rows);
   assert(img.cols==img_eroded.cols);
   int avg_sum=0;
-  road_0=road_1=road_2=0;
-  for (int row = 0; row<img.rows; row++)
+  int r0=0, r1=0, r2=0;
+  int left_sum=0, right_sum=0;
+  for (int row = 0; row<img2.rows; row++)
   {
-    uchar* data=img.ptr<uchar>(row);
+    uchar* data=img2.ptr<uchar>(row);
     uchar* mask=img_eroded.ptr<uchar>(row);
     
     int mean_value_line_sum=0;
     int mean_value_line_cnt=0;
     int mean_value_line;
-    for (int col=0; col<img.cols;col++)
+    for (int col=0; col<img2.cols;col++)
     {
       if (*mask)
       {
+		if (row<=crosshair_y)
+		{
+			if (col < crosshair_x)
+				left_sum++;
+			else
+				right_sum++;
+		}
+		  
         avg_sum++;
         mean_value_line_sum+=col;
         mean_value_line_cnt++;
-        road_0+=data[0];
-        road_1+=data[1];
-        road_2+=data[2];
+        r0+=data[0];
+        r1+=data[1];
+        r2+=data[2];
       }
       
-      data+=3;
+      data+=img.step[1];
       mask++;
     }
     
@@ -446,29 +562,30 @@ int main(int argc, char* argv[])
 		int variance_line=0;
 		int stddev_line;
 		uchar* mask=img_eroded.ptr<uchar>(row);
-		for (int col=0; col<img.cols;col++)
+		data=img2.ptr<uchar>(row);
+		for (int col=0; col<img2.cols;col++)
 		{
 		  if (*mask)
 			variance_line+=(col-mean_value_line)*(col-mean_value_line);
 		  
-		  data+=3;
+		  data+=img2.step[1];
 		  mask++;
 		}
 		variance_line/=mean_value_line_cnt;
 		stddev_line=sqrt(variance_line);
-		if (mean_value_line>1 && mean_value_line < img.cols-2)
+		if (mean_value_line>1 && mean_value_line < img2.cols-2)
 		{
 			img_stddev.ptr<uchar>(row)[mean_value_line-1]=255;
 			img_stddev.ptr<uchar>(row)[mean_value_line]=255;
 			img_stddev.ptr<uchar>(row)[mean_value_line+1]=255;
 		}
-		if ((mean_value_line+stddev_line)>1 && (mean_value_line+stddev_line) < img.cols-2)
+		if ((mean_value_line+stddev_line)>1 && (mean_value_line+stddev_line) < img2.cols-2)
 		{
 			img_stddev.ptr<uchar>(row)[mean_value_line-1+stddev_line]=255;
 			img_stddev.ptr<uchar>(row)[mean_value_line+stddev_line]=255;
 			img_stddev.ptr<uchar>(row)[mean_value_line+1+stddev_line]=255;
 		}
-		if ((mean_value_line-stddev_line)>1 && (mean_value_line-stddev_line) < img.cols-2)
+		if ((mean_value_line-stddev_line)>1 && (mean_value_line-stddev_line) < img2.cols-2)
 		{
 			img_stddev.ptr<uchar>(row)[mean_value_line-1-stddev_line]=255;
 			img_stddev.ptr<uchar>(row)[mean_value_line-stddev_line]=255;
@@ -479,9 +596,9 @@ int main(int argc, char* argv[])
   
   if (avg_sum>20)
   {
-	  road_0/=avg_sum;
-	  road_1/=avg_sum;
-	  road_2/=avg_sum;
+	  road_0=r0/avg_sum;
+	  road_1=r1/avg_sum;
+	  road_2=r2/avg_sum;
 	}
 
 /*
@@ -498,14 +615,36 @@ int main(int argc, char* argv[])
   */
 
   
-  imshow("orig", img);
+  img2.row(crosshair_y)=Scalar(255,0,0);
+  img2.col(crosshair_x)=Scalar(255,0,0);
+  img_diff.row(crosshair_y)=255;
+  img_diff.col(crosshair_x)=255;
+  img_thres2.row(crosshair_y)=128;
+  img_thres2.col(crosshair_x)=128;
+  img_stddev.row(crosshair_y)=255;
+  img_stddev.col(crosshair_x)=255;
+
+  Mat steer=Mat::zeros(20,1920,CV_8U);
+  steer.col( steer.cols /2 )=128;
+  if (left_sum+right_sum>0)
+  {
+	  int x = steer.cols * left_sum / (left_sum+right_sum);
+	  steer.col(x) = 255;
+	  if (x-1 > 0 ) steer.col(x-1)=240;
+	  if (x+1 < steer.cols) steer.col(x+1)=240;
+  }
+
+  //imshow("orig", img);
   imshow("edit", img2);
   //imshow("perspective", img_perspective);
   imshow("diff", img_diff);
   imshow("hist", img_hist);
   imshow("thres", img_thres2);
   imshow("stddev", img_stddev);
+  imshow("steer", steer);
   
+  Mat road_color(100,100, CV_8UC3, Scalar(road_0, road_1, road_2));
+  imshow("road_color", road_color);
   waitKey(1000/50);
   //waitKey();
 }
