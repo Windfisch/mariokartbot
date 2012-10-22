@@ -321,41 +321,25 @@ void Joystick::press_a(bool a)
 
 void Joystick::reset()
 {
-	sleep(1);
 	struct input_event ev;
 	ev.type=EV_ABS;
 	ev.code=ABS_Y;
+	ev.value=5001;
+	write(fd, &ev, sizeof(ev));
 	ev.value=5000;
 	write(fd, &ev, sizeof(ev));
 	
 	cout << "Y zeroed" << endl;
 	
-	sleep(1);
+	steer(0.1);
 	steer(0);
 	cout << "X zeroed" << endl;
 	
-	sleep(1);
+	press_a(true);
 	press_a(false);
 	cout << "A zeroed" << endl;
-	
-	sleep(1);
 }
 
-/*
-int main()
-{
-	XorgGrabber grabber("Mupen64Plus OpenGL Video");
-	
-	namedWindow("meh");
-	Mat meh;
-	while(1)
-	{
-		grabber.read(meh);
-		imshow("meh",meh);
-		waitKey(100);
-	}
-}
-*/
 
 
 #define HIST_SMOOTH 7
@@ -411,10 +395,17 @@ int main(int argc, char* argv[])
   string tmp;
   Joystick joystick;
 
-  cout << "joystick initalized, now start mupen and press enter to continue" << endl;
-  getchar();
+  cout << "joystick initalized, now starting mupen." << endl;
+  
+  
+  if (fork()==0) system("mupen64plus --nogui --noask ~/MarioKart64.rom");
+  
+  sleep(2);
+  
   joystick.reset();
-  cout << "press enter to steer left" << endl;
+  cout << "reset joystick." << endl;
+
+/*  cout << "press enter to steer left" << endl;
   getchar();
   
   
@@ -440,7 +431,7 @@ int main(int argc, char* argv[])
   
   cout << "A released." << endl;
   joystick.press_a(false);
-  getchar();
+  getchar();*/
   
   cout << "waiting for game to start, press enter when started." << endl;
   getchar();
