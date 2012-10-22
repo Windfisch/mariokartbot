@@ -400,10 +400,10 @@ int main(int argc, char* argv[])
   
   if (fork()==0) system("mupen64plus --nogui --noask ~/MarioKart64.rom");
   
-  sleep(2);
+  sleep(1);
   
   joystick.reset();
-  cout << "reset joystick." << endl;
+  cout << "successfully reset joystick." << endl;
 
 /*  cout << "press enter to steer left" << endl;
   getchar();
@@ -554,9 +554,13 @@ int main(int argc, char* argv[])
     if (hist2[i]>hist_max) hist_max=hist2[i];
     if ((hist2[i] < hist_max/2) && (i>x_begin))
     {
-      thres=i; break;
+      thres=i;
+      break;
     }
   }
+  
+  //thres-=thres/4;
+  
   
   Mat img_hist(100,256, CV_8U);
   for (int row = 0; row<img_hist.rows; row++)
@@ -713,10 +717,11 @@ int main(int argc, char* argv[])
   //imshow("orig", img);
   imshow("edit", img2);
   //imshow("perspective", img_perspective);
-  imshow("diff", img_diff);
+  //imshow("diff", img_diff);
   imshow("hist", img_hist);
-  imshow("thres", img_thres2);
-  imshow("stddev", img_stddev);
+  imshow("thres", img_thres);
+  imshow("thres2", img_thres2);
+  //imshow("stddev", img_stddev);
   imshow("steer", steer);
   
   Mat road_color(100,100, CV_8UC3, Scalar(road_0, road_1, road_2));
