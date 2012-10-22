@@ -20,10 +20,17 @@
  */
 
 
-#include <iostream>
-#include <xcb/xcb.h>
+
+#include <unistd.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <fcntl.h>
+#include <linux/input.h>
+#include <linux/uinput.h>
+
+#include <iostream>
+#include <xcb/xcb.h>
 #include <assert.h>
 
 #include <opencv2/opencv.hpp>
@@ -207,6 +214,9 @@ void XorgGrabber::read(Mat& mat)
 
 
 
+
+#define THROTTLE_CNT_MAX 20
+
 class Joystick
 {
 	public:
@@ -215,8 +225,11 @@ class Joystick
 		
 		void steer(float dir);
 		void throttle(float t);
+		void press_a(bool);
+		
 		
 		void process();
+		void reset();
 		
 	private:
 		float throt;
@@ -260,16 +273,7 @@ Joystick::Joystick()
 	
 	ioctl(fd,UI_DEV_CREATE);
 	
-
-	struct input_event ev;
-	ev.type=EV_ABS;
-	ev.code=ABS_Y;
-	ev.value=5000+dir*5000;
-	write(fd, &ev, sizeof(ev));
-
-	steer(0);
-	throttle(0);
-	process();
+	reset();
 }
 
 Joystick::~Joystick()
@@ -301,13 +305,40 @@ void Joystick::throttle(float t)
 void Joystick::process()
 {
 	throttle_cnt++;
-	if (throttle_cnt>THROTTLE_CNT_MAX) throttle_cnt=0;
+	if (throttle_cnt>=THROTTLE_CNT_MAX) throttle_cnt=0;
 	
+	press_a((throttle_cnt < throt*THROTTLE_CNT_MAX));
+}
+
+void Joystick::press_a(bool a)
+{
 	struct input_event ev;
 	ev.type=EV_KEY;
 	ev.code=BTN_A;
-	ev.value =  (throttle_cnt < throt*THROTTLE_CNT_MAX) ? 1 : 0;
+	ev.value =  a ? 1 : 0;
 	write(fd, &ev, sizeof(ev));
+}
+
+void Joystick::reset()
+{
+	sleep(1);
+	struct input_event ev;
+	ev.type=EV_ABS;
+	ev.code=ABS_Y;
+	ev.value=5000;
+	write(fd, &ev, sizeof(ev));
+	
+	cout << "Y zeroed" << endl;
+	
+	sleep(1);
+	steer(0);
+	cout << "X zeroed" << endl;
+	
+	sleep(1);
+	press_a(false);
+	cout << "A zeroed" << endl;
+	
+	sleep(1);
 }
 
 /*
@@ -369,9 +400,52 @@ void mouse_callback(int event, int x, int y, int flags, void* userdata)
 }
 
 
+float flopow(float b, float e)
+{
+	return (b>=0.0) ? (powf(b,e)) : (-powf(-b,e));
+}
+
 int main(int argc, char* argv[])
 {
-  XorgGrabber capture("Mupen64Plus OpenGL Video");
+  
+  string tmp;
+  Joystick joystick;
+
+  cout << "joystick initalized, now start mupen and press enter to continue" << endl;
+  getchar();
+  joystick.reset();
+  cout << "press enter to steer left" << endl;
+  getchar();
+  
+  
+  cout << "now steering left. press enter to continue." << endl;
+  joystick.steer(-1.0);
+  getchar();
+  
+  cout << "centered. press enter to steer right." << endl;
+  joystick.steer(0.0);
+  getchar();
+  
+  cout << "steering right" << endl;
+  joystick.steer(1.0);
+  getchar();
+
+  cout << "centered. press enter to press a." << endl;
+  joystick.steer(0.0);
+  getchar();
+  
+  cout << "pressing A" << endl;
+  joystick.press_a(true);
+  getchar();
+  
+  cout << "A released." << endl;
+  joystick.press_a(false);
+  getchar();
+  
+  cout << "waiting for game to start, press enter when started." << endl;
+  getchar();
+
+  XorgGrabber capture("glN64");//("Mupen64Plus OpenGL Video");
 
   int road_0=77, road_1=77, road_2=77;
   
@@ -388,6 +462,8 @@ int main(int argc, char* argv[])
   
   namedWindow("edit");
   setMouseCallback("edit", mouse_callback, NULL);
+  
+  joystick.throttle(0.5);
   
   while(1)
   {
@@ -628,11 +704,20 @@ int main(int argc, char* argv[])
   steer.col( steer.cols /2 )=128;
   if (left_sum+right_sum>0)
   {
-	  int x = steer.cols * left_sum / (left_sum+right_sum);
+	  int x = (steer.cols-2) * left_sum / (left_sum+right_sum)    +1;
+	  
+	  if (x<1) x=1;
+	  if (x>=steer.cols-1) x=steer.cols-2;
+	  
 	  steer.col(x) = 255;
-	  if (x-1 > 0 ) steer.col(x-1)=240;
-	  if (x+1 < steer.cols) steer.col(x+1)=240;
+	  steer.col(x-1)=240;
+	  steer.col(x+1)=240;
+	  
+	  
+	  joystick.steer(- 5* flopow(  (((float)left_sum / (left_sum+right_sum))-0.5  )*2.0 , 1.1)  );
   }
+  else
+	joystick.steer(0.0);
 
   //imshow("orig", img);
   imshow("edit", img2);
@@ -646,6 +731,8 @@ int main(int argc, char* argv[])
   Mat road_color(100,100, CV_8UC3, Scalar(road_0, road_1, road_2));
   imshow("road_color", road_color);
   waitKey(1000/50);
+  
+  joystick.process();
   //waitKey();
 }
 }
