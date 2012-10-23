@@ -349,6 +349,8 @@ void Joystick::reset()
 #define ERODE_RADIUS_2D 4
 
 
+#define IMG_HISTORY 3
+
 
 Mat circle_mat(int radius)
 {
@@ -391,6 +393,8 @@ float flopow(float b, float e)
 
 int main(int argc, char* argv[])
 {
+try {
+  
   
   string tmp;
   Joystick joystick;
@@ -398,7 +402,7 @@ int main(int argc, char* argv[])
   cout << "joystick initalized, now starting mupen." << endl;
   
   
-  if (fork()==0) system("mupen64plus --nogui --noask ~/MarioKart64.rom");
+  if (fork()==0) { system("mupen64plus --nogui --noask ~/MarioKart64.rom"); exit(0); }
   
   sleep(1);
   
@@ -445,6 +449,7 @@ int main(int argc, char* argv[])
   bool first=true;
   int xlen, ylen;
   
+  Mat erode_2d_small=circle_mat(3);
   Mat erode_2d_big=circle_mat(10);
   
   #define trans_width 600
@@ -456,11 +461,15 @@ int main(int argc, char* argv[])
   
   joystick.throttle(0.5);
   
+  Mat img_history[IMG_HISTORY];
+  int history_pointer=0;
+  
   while(1)
   {
     
   Mat img_;
-  capture.read(img_);
+  
+    capture.read(img_);
   
   if (first)
   {
@@ -472,7 +481,6 @@ int main(int argc, char* argv[])
     Point2f dest_pts[4] = { Point2f(trans_width/2 - road_width/2, trans_height), Point2f(trans_width/2 + road_width/2, trans_height),        Point2f(trans_width/2 - road_width/2, trans_height/2), Point2f(trans_width/2 + road_width/2, trans_height/2) };
     transform=getPerspectiveTransform(src_pts, dest_pts);
 
-    
     first=false;
   }
   assert ((img_.cols==xlen) && (img_.rows==ylen));
@@ -585,10 +593,27 @@ int main(int argc, char* argv[])
   Mat img_stddev(img_thres.rows, img_thres.cols, img_thres.type());
   img_stddev=Mat::zeros(img_thres.rows, img_thres.cols,  img_thres.type());
   
-  erode(img_thres, img_eroded, Mat::ones(3, 3, CV_8U));
-  dilate(img_eroded, img_thres2, Mat::ones(3, 3, CV_8U));
+  erode(img_thres, img_eroded, erode_2d_small);
+  dilate(img_eroded, img_thres2, erode_2d_small);
+  img_thres2.copyTo(img_thres);
+
+
+  img_thres.copyTo(img_history[history_pointer]);
+  
+  Mat historized=img_history[0]/IMG_HISTORY;
+  for (int i=1; i<IMG_HISTORY; i++)
+    if (historized.cols == img_history[i].cols)
+	  historized+=img_history[i]/IMG_HISTORY;
+	
+  history_pointer=(history_pointer+1)%IMG_HISTORY;
+
+
   dilate(img_thres2, img_eroded, erode_2d_big);
   erode(img_eroded, img_thres2, erode_2d_big);
+
+
+
+
   
   assert(img.rows==img_eroded.rows);
   assert(img.cols==img_eroded.cols);
@@ -714,6 +739,9 @@ int main(int argc, char* argv[])
   else
 	joystick.steer(0.0);
 
+
+
+
   //imshow("orig", img);
   imshow("edit", img2);
   //imshow("perspective", img_perspective);
@@ -721,6 +749,7 @@ int main(int argc, char* argv[])
   imshow("hist", img_hist);
   imshow("thres", img_thres);
   imshow("thres2", img_thres2);
+  imshow("history", historized);
   //imshow("stddev", img_stddev);
   imshow("steer", steer);
   
@@ -731,4 +760,15 @@ int main(int argc, char* argv[])
   joystick.process();
   //waitKey();
 }
+
+} //try
+catch(string meh)
+{
+	cout << "error: "<<meh<< endl;
+}
+catch(...)
+{
+	cout << "error!" << endl;
+}
+
 }
