@@ -223,7 +223,7 @@ class Joystick
 		Joystick();
 		~Joystick();
 		
-		void steer(float dir);
+		void steer(float dir, float dead_zone=0.0);
 		void throttle(float t);
 		void press_a(bool);
 		
@@ -242,7 +242,7 @@ Joystick::Joystick()
 {
 	fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
 	if(fd < 0) {
-		cerr << "open failed" << endl;
+		cerr << "open uinput failed. do you have privilegies to access it? (try chown flo:root /dev/uinput)" << endl;
 		exit(EXIT_FAILURE);
 	}
 	
@@ -282,10 +282,12 @@ Joystick::~Joystick()
 	close(fd);
 }
 
-void Joystick::steer(float dir)
+void Joystick::steer(float dir, float dead_zone)
 {
 	if (dir<-1.0) dir=-1.0;
 	if (dir>1.0) dir=1.0;
+	
+	if (fabs(dir)<dead_zone) dir=0.0;
 	
 	struct input_event ev;
 	ev.type=EV_ABS;
@@ -461,6 +463,10 @@ try {
   
   joystick.throttle(0.5);
   
+  
+  VideoWriter img_writer, thres_writer, thres2_writer;
+  
+  
   Mat img_history[IMG_HISTORY];
   int history_pointer=0;
   
@@ -476,10 +482,23 @@ try {
     xlen=img_.cols;
     ylen=img_.rows;
     
+    crosshair_x=xlen/2;
+    crosshair_y=0.58*ylen;
+    
     Point2f src_pts[4] =  { Point2f(0, ylen), Point2f(xlen, ylen),        Point2f(xlen* (.5 - 0.13), ylen/2), Point2f(xlen* (.5 + .13), ylen/2) };
     //Point2f dest_pts[4] = { Point2f(0, ylen), Point2f(trans_width, ylen), Point2f(0, trans_height),       Point2f(0, trans_height) };
     Point2f dest_pts[4] = { Point2f(trans_width/2 - road_width/2, trans_height), Point2f(trans_width/2 + road_width/2, trans_height),        Point2f(trans_width/2 - road_width/2, trans_height/2), Point2f(trans_width/2 + road_width/2, trans_height/2) };
     transform=getPerspectiveTransform(src_pts, dest_pts);
+
+	//img_writer.open("img.mpg", CV_FOURCC('P','I','M','1'), 30, Size(xlen,ylen), false);
+	img_writer.open("img.mpg", CV_FOURCC('P','I','M','1'), 30, Size(xlen,ylen), false);
+	thres_writer.open("thres.mpg", CV_FOURCC('P','I','M','1'), 30, Size(xlen,ylen), false);
+	thres2_writer.open("thres2.mpg", CV_FOURCC('P','I','M','1'), 30, Size(xlen,ylen), false);
+
+	if (!img_writer.isOpened() || !thres_writer.isOpened() || !thres2_writer.isOpened())
+	{
+		cout << "ERROR: could not open video files!" << !img_writer.isOpened() << !thres_writer.isOpened() << !thres2_writer.isOpened() <<endl;
+	}
 
     first=false;
   }
@@ -589,13 +608,19 @@ try {
   threshold(img_diff, img_thres, thres, 255, THRESH_BINARY_INV);
   
   Mat img_eroded(img_thres.rows, img_thres.cols, img_thres.type());
+  Mat img_tmp(img_thres.rows, img_thres.cols, img_thres.type());
   Mat img_thres2(img_thres.rows, img_thres.cols, img_thres.type());
   Mat img_stddev(img_thres.rows, img_thres.cols, img_thres.type());
   img_stddev=Mat::zeros(img_thres.rows, img_thres.cols,  img_thres.type());
   
-  erode(img_thres, img_eroded, erode_2d_small);
-  dilate(img_eroded, img_thres2, erode_2d_small);
-  img_thres2.copyTo(img_thres);
+  erode(img_thres, img_tmp, erode_2d_small);
+  img_tmp.copyTo(img_eroded);
+  dilate(img_tmp, img_thres, erode_2d_small);
+
+  dilate(img_thres, img_tmp, erode_2d_big);
+  erode(img_tmp, img_thres2, erode_2d_big);
+
+
 
 
   img_thres.copyTo(img_history[history_pointer]);
@@ -608,8 +633,6 @@ try {
   history_pointer=(history_pointer+1)%IMG_HISTORY;
 
 
-  dilate(img_thres2, img_eroded, erode_2d_big);
-  erode(img_eroded, img_thres2, erode_2d_big);
 
 
 
@@ -734,7 +757,7 @@ try {
 	  steer.col(x+1)=240;
 	  
 	  
-	  joystick.steer(- 5* flopow(  (((float)left_sum / (left_sum+right_sum))-0.5  )*2.0 , 1.1)  );
+	  joystick.steer(- 5* flopow(  (((float)left_sum / (left_sum+right_sum))-0.5  )*2.0 , 1.1)  ,0.05);
   }
   else
 	joystick.steer(0.0);
@@ -755,10 +778,15 @@ try {
   
   Mat road_color(100,100, CV_8UC3, Scalar(road_0, road_1, road_2));
   imshow("road_color", road_color);
-  waitKey(1000/50);
-  
+
+
+
+  img_writer << img_diff;
+  thres_writer << img_thres;
+  thres2_writer << img_thres2;
+
+  waitKey(1000/50);  
   joystick.process();
-  //waitKey();
 }
 
 } //try
