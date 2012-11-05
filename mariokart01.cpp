@@ -20,11 +20,13 @@
  */
 
 
-
+#include <vector>
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
+#include <semaphore.h>
 #include <fcntl.h>
 #include <linux/input.h>
 #include <linux/uinput.h>
@@ -285,7 +287,7 @@ Joystick::~Joystick()
 void Joystick::steer(float dir, float dead_zone)
 {
 	if (dir<-1.0) dir=-1.0;
-	if (dir>1.0) dir=1.0;
+	if (dir>1.0) dir=1.0; 
 	
 	if (fabs(dir)<dead_zone) dir=0.0;
 	
@@ -393,9 +395,119 @@ float flopow(float b, float e)
 	return (b>=0.0) ? (powf(b,e)) : (-powf(-b,e));
 }
 
+
+
+sem_t thread1_go;
+sem_t thread1_done;
+Mat thread1_img;
+
+void* thread1_func(void*)
+{
+	Mat gray;
+	static Mat gray_prev;
+
+	static std::vector<cv::Point2f> points[2];
+   
+	std::vector<uchar> status; // status of tracked features
+	std::vector<float> err;     // error in tracking
+
+	
+	cout << "thread 1 is alive :)" <<endl;
+	while(1)
+	{
+		sem_wait(&thread1_go);
+		sem_post(&thread1_done);
+		
+		sem_wait(&thread1_go);
+		// now we have our private image at thread1_img.
+		
+		cvtColor(thread1_img, gray, CV_BGR2GRAY);
+		
+		
+		if (points[0].size() <= 2000) // we need more points
+		{
+			std::vector<cv::Point2f> features; // detected features
+			
+			// detect the features
+			goodFeaturesToTrack(gray, // the image
+								features,   // the output detected features
+								3000, // the maximum number of features
+								0.2,     // quality level
+								10);   // min distance between two features
+
+
+			// add the detected features to
+			// the currently tracked features
+			points[0].insert(points[0].end(), features.begin(),features.end());
+		}
+		
+		
+		// for first image of the sequence
+		if(gray_prev.empty())
+			gray.copyTo(gray_prev);
+
+		cv::calcOpticalFlowPyrLK(
+			gray_prev, gray, // 2 consecutive images
+			points[0], // input point positions in first image
+			points[1], // output point positions in the 2nd image
+			status,    // tracking success
+			err);      // tracking error
+		
+
+
+		int k=0;
+		for(int i=0; i < points[1].size(); i++) {
+			// do we keep this point?
+			if (status[i]) {
+				// keep this point in vector
+				points[0][k] = points[0][i];
+				points[1][k++] = points[1][i];
+			}
+		}
+		// eliminate unsuccesful points
+		points[0].resize(k);
+		points[1].resize(k);
+
+
+
+		// for all tracked points
+		for(int i= 0; i < points[1].size(); i++ ) {
+			// draw line and circle
+			cv::line(thread1_img,
+					points[0][i], // initial position
+					points[1][i],// new position
+					cv::Scalar(255,255,255));
+			
+			cv::circle(thread1_img, points[1][i], 2,
+					cv::Scalar(255,255,255),-1);
+		}
+
+		// 4. extrapolate movement
+		for (int i=0;i<points[0].size();i++)
+		{
+			points[0][i].x = points[1][i].x+(points[1][i].x-points[0][i].x);
+			points[0][i].y = points[1][i].y+(points[1][i].y-points[0][i].y);
+		}
+
+		cv::swap(gray_prev, gray);
+
+		
+		// now we must stop accessing thread1_img, main() may access it
+		sem_post(&thread1_done);
+	}
+}
+
+
 int main(int argc, char* argv[])
 {
 try {
+  
+  
+  if (sem_init(&thread1_go, 0, 0)) throw string("sem_init failed");
+  if (sem_init(&thread1_done, 0, 0)) throw string("sem_init failed");
+  
+  pthread_t thread1;
+  if (pthread_create(&thread1, NULL, thread1_func, NULL)) throw string("pthread_create failed");
   
   
   string tmp;
@@ -507,6 +619,7 @@ try {
   Mat img, img2;
   img_.convertTo(img, CV_8UC3, 1); //FINDMICH
   img.copyTo(img2);
+  img.copyTo(thread1_img); sem_post(&thread1_go);
   
   #ifdef NO_BRIGHTNESS
   //assert(img2.type()==CV_8UC3);
@@ -757,12 +870,15 @@ try {
 	  steer.col(x+1)=240;
 	  
 	  
-	  joystick.steer(- 5* flopow(  (((float)left_sum / (left_sum+right_sum))-0.5  )*2.0 , 1.1)  ,0.05);
+	  joystick.steer(- 4* flopow(  (((float)left_sum / (left_sum+right_sum))-0.5  )*2.0 , 1.6)  ,0.05);
   }
   else
 	joystick.steer(0.0);
 
 
+
+
+  sem_wait(&thread1_done); // wait for thread1 to finish
 
 
   //imshow("orig", img);
@@ -772,7 +888,8 @@ try {
   imshow("hist", img_hist);
   imshow("thres", img_thres);
   imshow("thres2", img_thres2);
-  imshow("history", historized);
+  imshow("tracked", thread1_img);
+  //imshow("history", historized);
   //imshow("stddev", img_stddev);
   imshow("steer", steer);
   
@@ -798,5 +915,8 @@ catch(...)
 {
 	cout << "error!" << endl;
 }
+
+sem_destroy(&thread1_go);
+sem_destroy(&thread1_done);
 
 }
