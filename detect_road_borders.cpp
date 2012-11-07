@@ -317,6 +317,7 @@ int main(int argc, char* argv[])
 					}
 			
 					#define ANG_SMOOTH 9
+					double* angle_derivative = new double[contours[i].size()];
 					for (j=init_j+ANG_SMOOTH;j<contours[i].size()-ANG_SMOOTH;j++)
 					{
 						int x=drawing.cols-drawing.cols*(j-init_j)/(contours[i].size()-init_j);
@@ -332,6 +333,8 @@ int main(int argc, char* argv[])
 						
 						int y=25+40-2*ang_diff/ANG_SMOOTH;
 						
+						angle_derivative[j] = (double)ang_diff / ANG_SMOOTH;
+						
 						double quality = ((double)ang_diff/ANG_SMOOTH) * linear(contours[i][j].y, highy, 1.0, highy+ (drawing.rows-highy)/10, 0.0, true) 
 						                                               * linear( abs(drawing.cols/2 - contours[i][j].x), 0.8*drawing.cols/2, 1.0, drawing.cols/2, 0.6, true);
 						int y2=25+40+100-5*quality;
@@ -343,6 +346,61 @@ int main(int argc, char* argv[])
 						circle(drawing, contours[i][j], 2, col);
 					}
 					
+					for (int j=init_j; j<init_j+ANG_SMOOTH; j++) angle_derivative[j]=angle_derivative[init_j+ANG_SMOOTH];
+					for (int j=contours[i].size()-ANG_SMOOTH; j<contours[i].size(); j++) angle_derivative[j]=angle_derivative[contours[i].size()-ANG_SMOOTH-1];
+					
+					double lastmax=-999999;
+					double bestquality=0.0;
+					int bestquality_j=-1;
+					int bestquality_width=-1;
+					
+					#define MAX_HYST 0.8
+					for (int j=3;j<contours[i].size()-3;j++)
+					{
+						if (angle_derivative[j] > lastmax) lastmax=angle_derivative[j];
+						if (angle_derivative[j] < MAX_HYST*lastmax && angle_derivative[j+1] < MAX_HYST*lastmax && angle_derivative[j+2] < MAX_HYST*lastmax)
+						{
+							int j0=-1;
+							for (j0=j-1; j0>=0; j0--)
+								if (angle_derivative[j0] < MAX_HYST*lastmax && angle_derivative[j0-1] < MAX_HYST*lastmax && angle_derivative[j0-2] < MAX_HYST*lastmax)
+									break;
+							
+							if (lastmax > 5)
+							{
+								// the maximum area goes from j0 to j
+								cout << "max from "<<j0<<" to "<<j<<endl;
+								int x=drawing.cols-drawing.cols*((j+j0)/2-init_j)/(contours[i].size()-init_j);
+								
+								double quality = ((double)angle_derivative[(j+j0)/2]) * linear(contours[i][j].y, highy, 1.0, highy+ (drawing.rows-highy)/10, 0.0, true) 
+																			   * linear( abs(drawing.cols/2 - contours[i][j].x), 0.8*drawing.cols/2, 1.0, drawing.cols/2, 0.6, true);
+								
+								if (quality>bestquality)
+								{
+									bestquality=quality;
+									bestquality_j=(j+j0)/2;
+									bestquality_width=j-j0;
+								}
+								
+								line(drawing, Point(x,25+40-3*quality), Point(x, 25+40), Scalar(0,255,0));
+								circle(drawing, contours[i][(j+j0)/2], 1, Scalar(128,0,0));
+							}
+							lastmax=-999999;
+						}
+					}
+					
+					for (int j=0;j<bestquality_j-bestquality_width;j++)
+						circle(drawing, contours[i][j], 2, Scalar(255,0,255));
+					for (int j=bestquality_j+bestquality_width;j<contours[i].size();j++)
+						circle(drawing, contours[i][j], 2, Scalar(0,255,0));
+
+					circle(drawing, contours[i][bestquality_j], 3, Scalar(255,255,0));
+					circle(drawing, contours[i][bestquality_j], 2, Scalar(255,255,0));
+					circle(drawing, contours[i][bestquality_j], 1, Scalar(255,255,0));
+					circle(drawing, contours[i][bestquality_j], 0, Scalar(255,255,0));
+					cout << "bestquality_width="<<bestquality_width<<endl<<endl<<endl<<endl;
+					
+					
+					delete [] angle_derivative;
 					delete [] angles;
 				}
 			}
@@ -387,8 +445,8 @@ int main(int argc, char* argv[])
 
 		imshow("input",thres);
 		imshow("contours",drawing);
-		//waitKey(100);
-		waitKey();
+		waitKey(100);
+		//waitKey();
 	}
   
 }
