@@ -8,26 +8,19 @@ using namespace std;
 using namespace cv;
 
 
-int find_intersection_index(const vector<Point>& pts, int* i1, int* i2, int x0, int y0, int x1, int y1) // bresenham aus der dt. wikipedia
-// returns: 0 if the only intersection is the last point, 1 if there are more intersections
-// in the latter case, the first two indexes are stored in *i1 and *i2
+int find_intersection_index(const vector<Point>& pts, int x0, int y0, int x1, int y1) // bresenham aus der dt. wikipedia
+// returns: the point's index where the intersection happened, or a negative number if no intersection.
 {
   int dx =  abs(x1-x0), sx = x0<x1 ? 1 : -1;
   int dy = -abs(y1-y0), sy = y0<y1 ? 1 : -1; 
   int err = dx+dy, e2; /* error value e_xy */
  
-  int n_intersections=0;
   for(;;){  /* loop */
     
     //setPixel(x0,y0);
     for (int i=0; i<pts.size();i++)
-    {
 		if (abs(pts[i].x-x0)+abs(pts[i].y-y0)<=1) // found intersection?
-		{
-			if (n_intersections==0) { *i1=i; n_intersections=1; break; }
-			else if (abs(*i1-i)>5)  { *i2=i; return 1; }
-		}
-	}
+			return i;
     
     
     if (x0==x1 && y0==y1) break;
@@ -36,7 +29,7 @@ int find_intersection_index(const vector<Point>& pts, int* i1, int* i2, int x0, 
     if (e2 < dx) { err += dx; y0 += sy; } /* e_xy+e_y < 0 */
   }
   
-  return 0;
+  return -1;
 }
 
 
@@ -444,37 +437,35 @@ int main(int argc, char* argv[])
 						
 					line(drawing, contours[i][bestquality_j], Point(drawing.cols/2, drawing.rows-drawing.rows/5), Scalar(0,255,255));
 					
-					int i1,i2;
-					if (find_intersection_index(contours[i], &i1,&i2, drawing.cols/2, drawing.rows-drawing.rows/5, contours[i][bestquality_j].x, contours[i][bestquality_j].y))
+					int intersection = find_intersection_index(contours[i], drawing.cols/2, drawing.rows-drawing.rows/5, contours[i][bestquality_j].x, contours[i][bestquality_j].y);
+					if (intersection>=0 && intersection!=bestquality_j)
 					{
-						circle(drawing, contours[i][i1], 2, Scalar(0,0,0));
-						circle(drawing, contours[i][i1], 1, Scalar(0,0,0));
-						circle(drawing, contours[i][i2], 2, Scalar(0,0,0));
-						circle(drawing, contours[i][i2], 1, Scalar(0,0,0));
+						circle(drawing, contours[i][intersection], 2, Scalar(0,0,0));
+						circle(drawing, contours[i][intersection], 1, Scalar(0,0,0));
 
 						int xx;
-						if (i1 < bestquality_j) // im pinken bereich, also zu weit rechts
+						if (intersection < bestquality_j) // im pinken bereich, also zu weit rechts
 						{
 							for (xx = contours[i][bestquality_j].x; xx>=0; xx--)
 							{
-								int result = find_intersection_index(contours[i], &i1,&i2, drawing.cols/2, drawing.rows-drawing.rows/5, xx, contours[i][bestquality_j].y);
-								if (!result)
+								int intersection2 = find_intersection_index(contours[i], drawing.cols/2, drawing.rows-drawing.rows/5, xx, contours[i][bestquality_j].y);
+								if (intersection2<0)
 									break;
-								if (i1>=bestquality_j /*&& contours[i][i1].y<contours[i][bestquality_j].y*/)
+								if (intersection2>=bestquality_j)
 								{
 									xx++; // undo last step
 									break;
 								}
 							}
 						}
-						else if (i1 > bestquality_j) // im grünen bereich, also zu weit links
+						else if (intersection > bestquality_j) // im grünen bereich, also zu weit links
 						{
 							for (xx = contours[i][bestquality_j].x; xx<drawing.cols; xx++)
 							{
-								int result = find_intersection_index(contours[i], &i1,&i2, drawing.cols/2, drawing.rows-drawing.rows/5, xx, contours[i][bestquality_j].y);
-								if (!result)
+								int intersection2 = find_intersection_index(contours[i], drawing.cols/2, drawing.rows-drawing.rows/5, xx, contours[i][bestquality_j].y);
+								if (intersection2<0)
 									break;
-								if (i1<=bestquality_j /*&& contours[i][i1].y<contours[i][bestquality_j].y*/)
+								if (intersection2<=bestquality_j)
 								{
 									xx--; // undo last step
 									break;
