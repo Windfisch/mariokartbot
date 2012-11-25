@@ -7,6 +7,39 @@
 using namespace std;
 using namespace cv;
 
+
+int find_intersection_index(const vector<Point>& pts, int* i1, int* i2, int x0, int y0, int x1, int y1) // bresenham aus der dt. wikipedia
+// returns: 0 if the only intersection is the last point, 1 if there are more intersections
+// in the latter case, the first two indexes are stored in *i1 and *i2
+{
+  int dx =  abs(x1-x0), sx = x0<x1 ? 1 : -1;
+  int dy = -abs(y1-y0), sy = y0<y1 ? 1 : -1; 
+  int err = dx+dy, e2; /* error value e_xy */
+ 
+  int n_intersections=0;
+  for(;;){  /* loop */
+    
+    //setPixel(x0,y0);
+    for (int i=0; i<pts.size();i++)
+    {
+		if (abs(pts[i].x-x0)+abs(pts[i].y-y0)<=1) // found intersection?
+		{
+			if (n_intersections==0) { *i1=i; n_intersections=1; break; }
+			else if (abs(*i1-i)>5)  { *i2=i; return 1; }
+		}
+	}
+    
+    
+    if (x0==x1 && y0==y1) break;
+    e2 = 2*err;
+    if (e2 > dy) { err += dy; x0 += sx; } /* e_xy+e_x > 0 */
+    if (e2 < dx) { err += dx; y0 += sy; } /* e_xy+e_y < 0 */
+  }
+  
+  return 0;
+}
+
+
 Mat circle_mat(int radius)
 {
 	Mat result(radius*2+1, radius*2+1, CV_8U);
@@ -126,9 +159,17 @@ int main(int argc, char* argv[])
 	int area_history_ptr=0;
 	int area_history_sum=AREA_HISTORY;
 	cout << endl<<endl<<endl;
+	int frameno=0;
 	while (1)
 	{
 		capture >> frame;
+		
+		if (frameno<190)
+		{
+			frameno++;
+			continue;
+		}
+		
 		cvtColor(frame, tmp, CV_RGB2GRAY);
 		threshold(tmp, thres, 132, 255, THRESH_BINARY);
 		dilate(thres,tmp,Mat());
@@ -337,11 +378,11 @@ int main(int argc, char* argv[])
 						
 						double quality = ((double)ang_diff/ANG_SMOOTH) * linear(contours[i][j].y, highy, 1.0, highy+ (drawing.rows-highy)/10, 0.0, true) 
 						                                               * linear( abs(drawing.cols/2 - contours[i][j].x), 0.8*drawing.cols/2, 1.0, drawing.cols/2, 0.6, true);
-						int y2=25+40+100-5*quality;
+						//int y2=25+40+100-5*quality;
 						
 						line(drawing, Point(x,y), Point(x,y), Scalar(255,255,255));
-						line(drawing, Point(x,25+40+100), Point(x,25+40+100), Scalar(127,127,127));
-						line(drawing, Point(x,y2), Point(x,y2), Scalar(255,255,255));
+						//line(drawing, Point(x,25+40+100), Point(x,25+40+100), Scalar(127,127,127));
+						//line(drawing, Point(x,y2), Point(x,y2), Scalar(255,255,255));
 						
 						circle(drawing, contours[i][j], 2, col);
 					}
@@ -351,6 +392,7 @@ int main(int argc, char* argv[])
 					
 					double lastmax=-999999;
 					double bestquality=0.0;
+					double bestquality_max=0.0;
 					int bestquality_j=-1;
 					int bestquality_width=-1;
 					
@@ -368,7 +410,6 @@ int main(int argc, char* argv[])
 							if (lastmax > 5)
 							{
 								// the maximum area goes from j0 to j
-								cout << "max from "<<j0<<" to "<<j<<endl;
 								int x=drawing.cols-drawing.cols*((j+j0)/2-init_j)/(contours[i].size()-init_j);
 								
 								double quality = ((double)angle_derivative[(j+j0)/2]) * linear(contours[i][j].y, highy, 1.0, highy+ (drawing.rows-highy)/10, 0.0, true) 
@@ -377,6 +418,7 @@ int main(int argc, char* argv[])
 								if (quality>bestquality)
 								{
 									bestquality=quality;
+									bestquality_max=lastmax;
 									bestquality_j=(j+j0)/2;
 									bestquality_width=j-j0;
 								}
@@ -388,16 +430,63 @@ int main(int argc, char* argv[])
 						}
 					}
 					
-					for (int j=0;j<bestquality_j-bestquality_width;j++)
-						circle(drawing, contours[i][j], 2, Scalar(255,0,255));
-					for (int j=bestquality_j+bestquality_width;j<contours[i].size();j++)
-						circle(drawing, contours[i][j], 2, Scalar(0,255,0));
-
 					circle(drawing, contours[i][bestquality_j], 3, Scalar(255,255,0));
 					circle(drawing, contours[i][bestquality_j], 2, Scalar(255,255,0));
 					circle(drawing, contours[i][bestquality_j], 1, Scalar(255,255,0));
 					circle(drawing, contours[i][bestquality_j], 0, Scalar(255,255,0));
-					cout << "bestquality_width="<<bestquality_width<<endl<<endl<<endl<<endl;
+
+					int antisaturation = 200-(200* bestquality/10.0);
+					if (antisaturation<0) antisaturation=0;
+					for (int j=0;j<bestquality_j-bestquality_width/2;j++)
+						circle(drawing, contours[i][j], 2, Scalar(255,antisaturation,255));
+					for (int j=bestquality_j+bestquality_width/2;j<contours[i].size();j++)
+						circle(drawing, contours[i][j], 2, Scalar(antisaturation,255,antisaturation));
+						
+					line(drawing, contours[i][bestquality_j], Point(drawing.cols/2, drawing.rows-drawing.rows/5), Scalar(0,255,255));
+					
+					int i1,i2;
+					if (find_intersection_index(contours[i], &i1,&i2, drawing.cols/2, drawing.rows-drawing.rows/5, contours[i][bestquality_j].x, contours[i][bestquality_j].y))
+					{
+						circle(drawing, contours[i][i1], 2, Scalar(0,0,0));
+						circle(drawing, contours[i][i1], 1, Scalar(0,0,0));
+						circle(drawing, contours[i][i2], 2, Scalar(0,0,0));
+						circle(drawing, contours[i][i2], 1, Scalar(0,0,0));
+
+						int xx;
+						if (i1 < bestquality_j) // im pinken bereich, also zu weit rechts
+						{
+							for (xx = contours[i][bestquality_j].x; xx>=0; xx--)
+							{
+								int result = find_intersection_index(contours[i], &i1,&i2, drawing.cols/2, drawing.rows-drawing.rows/5, xx, contours[i][bestquality_j].y);
+								if (!result)
+									break;
+								if (i1>=bestquality_j /*&& contours[i][i1].y<contours[i][bestquality_j].y*/)
+								{
+									xx++; // undo last step
+									break;
+								}
+							}
+						}
+						else if (i1 > bestquality_j) // im grünen bereich, also zu weit links
+						{
+							for (xx = contours[i][bestquality_j].x; xx<drawing.cols; xx++)
+							{
+								int result = find_intersection_index(contours[i], &i1,&i2, drawing.cols/2, drawing.rows-drawing.rows/5, xx, contours[i][bestquality_j].y);
+								if (!result)
+									break;
+								if (i1<=bestquality_j /*&& contours[i][i1].y<contours[i][bestquality_j].y*/)
+								{
+									xx--; // undo last step
+									break;
+								}
+							}
+						}
+						
+						line(drawing, Point(xx, contours[i][bestquality_j].y), Point(drawing.cols/2, drawing.rows-drawing.rows/5), Scalar(127,255,255));
+					}
+					
+					cout << "bestquality_width="<<bestquality_width <<",\tquality="<<bestquality<<",\t"<<"raw max="<<bestquality_max
+						 <<endl<<endl<<endl<<endl;
 					
 					
 					delete [] angle_derivative;
@@ -406,7 +495,7 @@ int main(int argc, char* argv[])
 			}
 		}
 
-		Point midpoint=Point(drawing.cols/2, 250);
+		/*Point midpoint=Point(drawing.cols/2, 250); // farbkreis
 		for (int a=0; a<360; a++)
 		{
 			double s=sin((double)a*3.141592654/180.0);
@@ -414,7 +503,7 @@ int main(int argc, char* argv[])
 			int r,g,b;
 			hue2rgb(a, &r, &g, &b);
 			line(drawing,midpoint-Point(c*5, s*5), midpoint-Point(c*30, s*30),Scalar(b,g,r) );
-		}
+		}*/
 
 
 		
@@ -443,10 +532,14 @@ int main(int argc, char* argv[])
 		alertcnt++;
 		if (alertcnt == 20) cout << "\n\n\n\n\n\n------------------------\n\n\n";
 
+		cout << "frame #"<<frameno<<endl;
+
 		imshow("input",thres);
 		imshow("contours",drawing);
-		waitKey(100);
-		//waitKey();
+//		waitKey(100);
+		waitKey();
+		
+		frameno++;
 	}
   
 }
