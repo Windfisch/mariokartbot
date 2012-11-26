@@ -1,3 +1,5 @@
+//frame 275: da hängts!!
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <iostream>
@@ -8,7 +10,7 @@ using namespace std;
 using namespace cv;
 
 
-int find_intersection_index(const vector<Point>& pts, int x0, int y0, int x1, int y1) // bresenham aus der dt. wikipedia
+int find_intersection_index(int x0, int y0, int x1, int y1, int** contour_map, bool stop_at_endpoint=true) // bresenham aus der dt. wikipedia
 // returns: the point's index where the intersection happened, or a negative number if no intersection.
 {
   int dx =  abs(x1-x0), sx = x0<x1 ? 1 : -1;
@@ -18,12 +20,14 @@ int find_intersection_index(const vector<Point>& pts, int x0, int y0, int x1, in
   for(;;){  /* loop */
     
     //setPixel(x0,y0);
-    for (int i=0; i<pts.size();i++)
-		if (abs(pts[i].x-x0)+abs(pts[i].y-y0)<=1) // found intersection?
-			return i;
+    if (contour_map[x0][y0]>0) return contour_map[x0][y0]; // found intersection?
+    if (contour_map[x0][y0+1]>0) return contour_map[x0][y0+1];
+    if (contour_map[x0+1][y0]>0) return contour_map[x0+1][y0];
+    
+		
     
     
-    if (x0==x1 && y0==y1) break;
+    if (stop_at_endpoint && x0==x1 && y0==y1) break;
     e2 = 2*err;
     if (e2 > dy) { err += dy; x0 += sx; } /* e_xy+e_x > 0 */
     if (e2 < dx) { err += dx; y0 += sy; } /* e_xy+e_y < 0 */
@@ -145,7 +149,10 @@ int main(int argc, char* argv[])
 	
 	Mat thres(frame.rows, frame.cols, CV_8UC1);
 	Mat tmp(frame.rows, frame.cols, CV_8UC1);
-	
+	int** contour_map;
+	contour_map=new int*[frame.cols];
+	for (int i=0;i<frame.cols;i++)
+		contour_map[i]=new int[frame.rows];
 	
 	int area_history[AREA_HISTORY];
 	for (int i=0;i<AREA_HISTORY;i++) area_history[i]=1;
@@ -274,6 +281,7 @@ int main(int argc, char* argv[])
 		vector<Vec4i> hierarchy;
 
 		findContours(thres_tmp, contours, hierarchy, CV_RETR_TREE, CV_CHAIN_APPROX_NONE, Point(0, 0));
+		
 		/// Draw contours
 		Mat drawing = Mat::zeros( thres_tmp.size(), CV_8UC3 );
 		
@@ -289,7 +297,7 @@ int main(int argc, char* argv[])
 		for( int i = 0; i< contours.size(); i++ )
 		{
 			if (hierarchy[i][3]<0)
-			{
+			{		
 				int lowy=0, lowj=-1;
 				int highy=drawing.rows;
 				
@@ -307,6 +315,12 @@ int main(int argc, char* argv[])
 				if (lowj!=-1)
 				{
 					std::rotate(contours[i].begin(),contours[i].begin()+lowj,contours[i].end());
+
+					// create contour map
+					for (int j=0;j<frame.cols;j++) // zero it
+						memset(contour_map[j],0,frame.rows*sizeof(**contour_map));
+					for (int j=0;j<contours[i].size(); j++) // fill it
+						contour_map[contours[i][j].x][contours[i][j].y]=j;
 					
 					int j;
 					for (j=0;j<contours[i].size();j++)
@@ -435,45 +449,52 @@ int main(int argc, char* argv[])
 					for (int j=bestquality_j+bestquality_width/2;j<contours[i].size();j++)
 						circle(drawing, contours[i][j], 2, Scalar(antisaturation,255,antisaturation));
 						
-					line(drawing, contours[i][bestquality_j], Point(drawing.cols/2, drawing.rows-drawing.rows/5), Scalar(0,255,255));
+					line(drawing, contours[i][bestquality_j], Point(drawing.cols/2, drawing.rows-drawing.rows/5), Scalar(0,64,64));
 					
-					int intersection = find_intersection_index(contours[i], drawing.cols/2, drawing.rows-drawing.rows/5, contours[i][bestquality_j].x, contours[i][bestquality_j].y);
-					if (intersection>=0 && intersection!=bestquality_j)
+					int intersection = find_intersection_index(drawing.cols/2, drawing.rows-drawing.rows/5, contours[i][bestquality_j].x, contours[i][bestquality_j].y, contour_map);
+					if (intersection>=0) // should always be true
 					{
 						circle(drawing, contours[i][intersection], 2, Scalar(0,0,0));
 						circle(drawing, contours[i][intersection], 1, Scalar(0,0,0));
 
-						int xx;
+						int xx=contours[i][bestquality_j].x;
+						int lastheight=-1;
 						if (intersection < bestquality_j) // im pinken bereich, also zu weit rechts
 						{
-							for (xx = contours[i][bestquality_j].x; xx>=0; xx--)
+							for (; xx>=0; xx--)
 							{
-								int intersection2 = find_intersection_index(contours[i], drawing.cols/2, drawing.rows-drawing.rows/5, xx, contours[i][bestquality_j].y);
+								int intersection2 = find_intersection_index(drawing.cols/2, drawing.rows-drawing.rows/5, xx, contours[i][bestquality_j].y, contour_map);
 								if (intersection2<0)
 									break;
-								if (intersection2>=bestquality_j)
+								if (intersection2>=bestquality_j) // im gegenüberliegenden bereich?
 								{
-									xx++; // undo last step
+									if (contours[i][intersection2].y>=lastheight) xx++; // undo last step
 									break;
 								}
+								lastheight=contours[i][intersection2].y;
 							}
 						}
 						else if (intersection > bestquality_j) // im grünen bereich, also zu weit links
 						{
-							for (xx = contours[i][bestquality_j].x; xx<drawing.cols; xx++)
+							for (; xx<drawing.cols; xx++)
 							{
-								int intersection2 = find_intersection_index(contours[i], drawing.cols/2, drawing.rows-drawing.rows/5, xx, contours[i][bestquality_j].y);
+								int intersection2 = find_intersection_index(drawing.cols/2, drawing.rows-drawing.rows/5, xx, contours[i][bestquality_j].y, contour_map);
 								if (intersection2<0)
 									break;
-								if (intersection2<=bestquality_j)
+								if (intersection2<=bestquality_j) // im gegenüberliegenden bereich?
 								{
-									xx--; // undo last step
+									if (contours[i][intersection2].y>=lastheight) xx--; // undo last step
 									break;
 								}
+								lastheight=contours[i][intersection2].y;
 							}
 						}
+						// else // genau den horizontpunkt getroffen
+							// do nothing
 						
-						line(drawing, Point(xx, contours[i][bestquality_j].y), Point(drawing.cols/2, drawing.rows-drawing.rows/5), Scalar(127,255,255));
+						int steering_point = find_intersection_index(drawing.cols/2, drawing.rows-drawing.rows/5, xx, contours[i][bestquality_j].y, contour_map, false);
+						if (steering_point>=0) // should be always true
+							line(drawing, contours[i][steering_point], Point(drawing.cols/2, drawing.rows-drawing.rows/5), Scalar(0,255,255));
 					}
 					
 					cout << "bestquality_width="<<bestquality_width <<",\tquality="<<bestquality<<",\t"<<"raw max="<<bestquality_max
