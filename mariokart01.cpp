@@ -20,7 +20,8 @@
  */
 
 
-#define FREEBSD
+//#define FREEBSD
+#define LINUX
 
 #include <vector>
 #include <unistd.h>
@@ -293,6 +294,7 @@ class Joystick
 {
 	public:
 		Joystick();
+		~Joystick();
 		void steer(float dir, float dead_zone=0.0);
 		void throttle(float t);
 		void press_a(bool);
@@ -306,6 +308,9 @@ class Joystick
 		BUTTONS buttons;
 		void send_data();
 		int fifo_fd;
+#endif
+#ifdef LINUX
+		int fd;
 #endif
 
 		float throt;
@@ -360,6 +365,10 @@ void Joystick::reset()
 	send_data();
 }
 
+Joystick::~Joystick()
+{
+	close(fifo_fd);
+}
 #endif
 #ifdef LINUX
 Joystick::Joystick()
