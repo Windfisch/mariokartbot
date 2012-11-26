@@ -20,6 +20,8 @@
  */
 
 
+#define FREEBSD
+
 #include <vector>
 #include <unistd.h>
 #include <stdio.h>
@@ -28,8 +30,17 @@
 #include <pthread.h>
 #include <semaphore.h>
 #include <fcntl.h>
+
+#ifdef LINUX
 #include <linux/input.h>
 #include <linux/uinput.h>
+#endif
+
+#include <errno.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/uio.h>
+
 
 #include <iostream>
 #include <xcb/xcb.h>
@@ -217,14 +228,71 @@ void XorgGrabber::read(Mat& mat)
 
 
 
-#define THROTTLE_CNT_MAX 20
+#define THROTTLE_CNT_MAX 10
+
+
+#ifdef FREEBSD
+typedef union {
+    unsigned int Value;
+    struct {
+        unsigned R_DPAD       : 1;
+        unsigned L_DPAD       : 1;
+        unsigned D_DPAD       : 1;
+        unsigned U_DPAD       : 1;
+        unsigned START_BUTTON : 1;
+        unsigned Z_TRIG       : 1;
+        unsigned B_BUTTON     : 1;
+        unsigned A_BUTTON     : 1;
+
+        unsigned R_CBUTTON    : 1;
+        unsigned L_CBUTTON    : 1;
+        unsigned D_CBUTTON    : 1;
+        unsigned U_CBUTTON    : 1;
+        unsigned R_TRIG       : 1;
+        unsigned L_TRIG       : 1;
+        unsigned Reserved1    : 1;
+        unsigned Reserved2    : 1;
+
+        signed   X_AXIS       : 8;
+        signed   Y_AXIS       : 8;
+    };
+} BUTTONS;
+
+
+char* pack(const BUTTONS* buttons, char* buf)
+{
+	buf[0]= (buttons->A_BUTTON     ?  1 : 0) +
+	        (buttons->B_BUTTON     ?  2 : 0) +
+	        (buttons->L_TRIG       ?  4 : 0) +
+	        (buttons->R_TRIG       ?  8 : 0) +
+	        (buttons->Z_TRIG       ? 16 : 0) +
+	        (buttons->START_BUTTON ? 32 : 0) +
+	                                128;
+	                                 
+	buf[1]= (buttons->R_DPAD ?  1 : 0) +
+	        (buttons->L_DPAD ?  2 : 0) +
+	        (buttons->U_DPAD ?  4 : 0) +
+	        (buttons->D_DPAD ?  8 : 0) +
+	        ((buttons->X_AXIS & 128) ? 16 : 0) +
+	        ((buttons->Y_AXIS & 128) ? 32 : 0);
+	        
+	buf[2]= (buttons->R_CBUTTON ?  1 : 0) +
+	        (buttons->L_CBUTTON ?  2 : 0) +
+	        (buttons->U_CBUTTON ?  4 : 0) +
+	        (buttons->D_CBUTTON ?  8 : 0);
+	        
+	buf[3]= (buttons->X_AXIS & 127);
+	
+	buf[4]= (buttons->Y_AXIS & 127);
+	
+	return buf;
+}
+#endif
 
 class Joystick
 {
 	public:
 		Joystick();
-		~Joystick();
-		
 		void steer(float dir, float dead_zone=0.0);
 		void throttle(float t);
 		void press_a(bool);
@@ -232,14 +300,68 @@ class Joystick
 		
 		void process();
 		void reset();
-		
+	
 	private:
+#ifdef FREEBSD
+		BUTTONS buttons;
+		void send_data();
+		int fifo_fd;
+#endif
+
 		float throt;
 		int throttle_cnt;
 		
-		int fd;
 };
 
+#ifdef FREEBSD
+Joystick::Joystick()
+{
+	if ((fifo_fd=open("/var/tmp/mupen64plus_ctl", O_WRONLY )) == -1) {throw string(strerror(errno));}
+	cout << "opened" << endl;
+	if (fcntl(fifo_fd, F_SETFL, O_NONBLOCK) == -1) throw string("failed to set nonblocking io");
+	
+	reset();
+}
+
+void Joystick::press_a(bool state)
+{
+	buttons.A_BUTTON=state;
+	send_data();
+}
+
+void Joystick::send_data()
+{
+	char buf[5];
+	pack(&buttons, buf);
+	write(fifo_fd, buf, 5);
+}
+
+
+
+void Joystick::steer(float dir, float dead_zone)
+{
+	if (dir<-1.0) dir=-1.0;
+	if (dir>1.0) dir=1.0; 
+	
+	if (fabs(dir)<dead_zone) dir=0.0;
+	
+	buttons.X_AXIS = (signed) (127.0*dir);
+	send_data();
+}
+
+void Joystick::reset()
+{
+	memset(&buttons, sizeof(buttons), 0);
+	buttons.Z_TRIG=0;
+	buttons.R_TRIG=0;
+	buttons.L_TRIG=0;
+	buttons.A_BUTTON=0;
+	buttons.B_BUTTON=0;
+	send_data();
+}
+
+#endif
+#ifdef LINUX
 Joystick::Joystick()
 {
 	fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
@@ -298,21 +420,6 @@ void Joystick::steer(float dir, float dead_zone)
 	write(fd, &ev, sizeof(ev));
 }
 
-void Joystick::throttle(float t)
-{
-	if (t<0.0) t=0.0;
-	if (t>1.0) t=1.0;
-	
-	throt=t;
-}
-
-void Joystick::process()
-{
-	throttle_cnt++;
-	if (throttle_cnt>=THROTTLE_CNT_MAX) throttle_cnt=0;
-	
-	press_a((throttle_cnt < throt*THROTTLE_CNT_MAX));
-}
 
 void Joystick::press_a(bool a)
 {
@@ -342,6 +449,25 @@ void Joystick::reset()
 	press_a(true);
 	press_a(false);
 	cout << "A zeroed" << endl;
+}
+
+#endif
+
+
+void Joystick::throttle(float t)
+{
+	if (t<0.0) t=0.0;
+	if (t>1.0) t=1.0;
+	
+	throt=t;
+}
+
+void Joystick::process()
+{
+	throttle_cnt++;
+	if (throttle_cnt>=THROTTLE_CNT_MAX) throttle_cnt=0;
+	
+	press_a((throttle_cnt < throt*THROTTLE_CNT_MAX));
 }
 
 
@@ -420,7 +546,7 @@ void* thread1_func(void*)
 		
 		sem_wait(&thread1_go);
 		// now we have our private image at thread1_img.
-		
+/*		
 		cvtColor(thread1_img, gray, CV_BGR2GRAY);
 		
 		
@@ -491,7 +617,7 @@ void* thread1_func(void*)
 
 		cv::swap(gray_prev, gray);
 
-		
+		*/
 		// now we must stop accessing thread1_img, main() may access it
 		sem_post(&thread1_done);
 	}
@@ -511,13 +637,19 @@ try {
   
   
   string tmp;
-  Joystick joystick;
 
-  cout << "joystick initalized, now starting mupen." << endl;
-  
+#ifdef LINUX
+	Joystick joystick;
+	cout << "joystick initalized, now starting mupen." << endl;
+#endif
   
   if (fork()==0) { system("mupen64plus --nogui --noask ~/MarioKart64.rom"); exit(0); }
-  
+
+#ifdef FREEBSD
+  sleep(2);
+  Joystick joystick;
+#endif
+
   sleep(1);
   
   joystick.reset();
@@ -552,9 +684,18 @@ try {
   getchar();*/
   
   cout << "waiting for game to start, press enter when started." << endl;
+  joystick.press_a(false);
+  joystick.reset();
   getchar();
-
-  XorgGrabber capture("glN64");//("Mupen64Plus OpenGL Video");
+joystick.reset();
+joystick.press_a(true);
+getchar();
+#ifdef LINUX
+  XorgGrabber capture("glN64");
+#endif
+#ifdef FREEBSD
+  XorgGrabber capture("Mupen64Plus OpenGL Video");
+#endif
 
   int road_0=77, road_1=77, road_2=77;
   
@@ -873,7 +1014,7 @@ try {
 	  joystick.steer(- 4* flopow(  (((float)left_sum / (left_sum+right_sum))-0.5  )*2.0 , 1.6)  ,0.05);
   }
   else
-	joystick.steer(0.0);
+    joystick.steer(0.0);
 
 
 
