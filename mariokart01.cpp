@@ -20,6 +20,8 @@
  */
 
 
+#define FREEBSD
+
 #include <vector>
 #include <unistd.h>
 #include <stdio.h>
@@ -28,6 +30,11 @@
 #include <pthread.h>
 #include <semaphore.h>
 #include <fcntl.h>
+
+#ifdef LINUX
+#include <linux/input.h>
+#include <linux/uinput.h>
+#endif
 
 #include <errno.h>
 #include <sys/types.h>
@@ -224,7 +231,7 @@ void XorgGrabber::read(Mat& mat)
 #define THROTTLE_CNT_MAX 10
 
 
-
+#ifdef FREEBSD
 typedef union {
     unsigned int Value;
     struct {
@@ -280,12 +287,12 @@ char* pack(const BUTTONS* buttons, char* buf)
 	
 	return buf;
 }
-
+#endif
 
 class Joystick
 {
 	public:
-		Joystick(const char* fifo);
+		Joystick();
 		void steer(float dir, float dead_zone=0.0);
 		void throttle(float t);
 		void press_a(bool);
@@ -295,18 +302,21 @@ class Joystick
 		void reset();
 	
 	private:
+#ifdef FREEBSD
 		BUTTONS buttons;
 		void send_data();
 		int fifo_fd;
+#endif
 
 		float throt;
 		int throttle_cnt;
 		
 };
 
-Joystick::Joystick(const char* fifo)
+#ifdef FREEBSD
+Joystick::Joystick()
 {
-	if ((fifo_fd=open(fifo, O_WRONLY )) == -1) {throw string(strerror(errno));}
+	if ((fifo_fd=open("/var/tmp/mupen64plus_ctl", O_WRONLY )) == -1) {throw string(strerror(errno));}
 	cout << "opened" << endl;
 	if (fcntl(fifo_fd, F_SETFL, O_NONBLOCK) == -1) throw string("failed to set nonblocking io");
 	
@@ -339,6 +349,111 @@ void Joystick::steer(float dir, float dead_zone)
 	send_data();
 }
 
+void Joystick::reset()
+{
+	memset(&buttons, sizeof(buttons), 0);
+	buttons.Z_TRIG=0;
+	buttons.R_TRIG=0;
+	buttons.L_TRIG=0;
+	buttons.A_BUTTON=0;
+	buttons.B_BUTTON=0;
+	send_data();
+}
+
+#endif
+#ifdef LINUX
+Joystick::Joystick()
+{
+	fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
+	if(fd < 0) {
+		cerr << "open uinput failed. do you have privilegies to access it? (try chown flo:root /dev/uinput)" << endl;
+		exit(EXIT_FAILURE);
+	}
+	
+	int ret;
+	
+	ret=ioctl(fd, UI_SET_EVBIT, EV_KEY);
+	ret=ioctl(fd, UI_SET_EVBIT, EV_SYN);
+	ret=ioctl(fd, UI_SET_KEYBIT	, BTN_A);
+	ioctl(fd, UI_SET_EVBIT, EV_ABS);
+	ioctl(fd, UI_SET_ABSBIT, ABS_X);
+	ioctl(fd, UI_SET_ABSBIT, ABS_Y);
+	
+	struct uinput_user_dev meh;
+	memset(&meh,0,sizeof(meh));
+	
+	strcpy(meh.name, "flotest");
+	meh.id.bustype=BUS_USB;
+	meh.id.vendor=0xdead;
+	meh.id.product=0xbeef;
+	meh.id.version=1;
+	meh.absmin[ABS_X]=0;
+	meh.absmax[ABS_X]=10000;
+	meh.absmin[ABS_Y]=0;
+	meh.absmax[ABS_Y]=10000;
+	
+	
+	ret=write(fd, &meh, sizeof(meh));
+	
+	ioctl(fd,UI_DEV_CREATE);
+	
+	reset();
+}
+
+Joystick::~Joystick()
+{
+	ioctl(fd, UI_DEV_DESTROY);
+	close(fd);
+}
+
+void Joystick::steer(float dir, float dead_zone)
+{
+	if (dir<-1.0) dir=-1.0;
+	if (dir>1.0) dir=1.0; 
+	
+	if (fabs(dir)<dead_zone) dir=0.0;
+	
+	struct input_event ev;
+	ev.type=EV_ABS;
+	ev.code=ABS_X;
+	ev.value=5000+dir*5000;
+	write(fd, &ev, sizeof(ev));
+}
+
+
+void Joystick::press_a(bool a)
+{
+	struct input_event ev;
+	ev.type=EV_KEY;
+	ev.code=BTN_A;
+	ev.value =  a ? 1 : 0;
+	write(fd, &ev, sizeof(ev));
+}
+
+void Joystick::reset()
+{
+	struct input_event ev;
+	ev.type=EV_ABS;
+	ev.code=ABS_Y;
+	ev.value=5001;
+	write(fd, &ev, sizeof(ev));
+	ev.value=5000;
+	write(fd, &ev, sizeof(ev));
+	
+	cout << "Y zeroed" << endl;
+	
+	steer(0.1);
+	steer(0);
+	cout << "X zeroed" << endl;
+	
+	press_a(true);
+	press_a(false);
+	cout << "A zeroed" << endl;
+}
+
+#endif
+
+
 void Joystick::throttle(float t)
 {
 	if (t<0.0) t=0.0;
@@ -353,17 +468,6 @@ void Joystick::process()
 	if (throttle_cnt>=THROTTLE_CNT_MAX) throttle_cnt=0;
 	
 	press_a((throttle_cnt < throt*THROTTLE_CNT_MAX));
-}
-
-void Joystick::reset()
-{
-	memset(&buttons, sizeof(buttons), 0);
-	buttons.Z_TRIG=0;
-	buttons.R_TRIG=0;
-	buttons.L_TRIG=0;
-	buttons.A_BUTTON=0;
-	buttons.B_BUTTON=0;
-	send_data();
 }
 
 
@@ -534,14 +638,18 @@ try {
   
   string tmp;
 
-  
+#ifdef LINUX
+	Joystick joystick;
+	cout << "joystick initalized, now starting mupen." << endl;
+#endif
   
   if (fork()==0) { system("mupen64plus --nogui --noask ~/MarioKart64.rom"); exit(0); }
 
+#ifdef FREEBSD
   sleep(2);
+  Joystick joystick;
+#endif
 
-  Joystick joystick("/var/tmp/mupen64plus_ctl");
-  
   sleep(1);
   
   joystick.reset();
@@ -577,9 +685,17 @@ try {
   
   cout << "waiting for game to start, press enter when started." << endl;
   joystick.press_a(false);
+  joystick.reset();
   getchar();
-
+joystick.reset();
+joystick.press_a(true);
+getchar();
+#ifdef LINUX
+  XorgGrabber capture("glN64");
+#endif
+#ifdef FREEBSD
   XorgGrabber capture("Mupen64Plus OpenGL Video");
+#endif
 
   int road_0=77, road_1=77, road_2=77;
   

@@ -1,0 +1,204 @@
+diff -ru mupen64plus-bundle-src-1.99.4-orig/source/mupen64plus-input-sdl/src/plugin.c mupen64plus-bundle-src-1.99.4/source/mupen64plus-input-sdl/src/plugin.c
+--- mupen64plus-bundle-src-1.99.4-orig/source/mupen64plus-input-sdl/src/plugin.c	2012-11-20 20:38:20.000000000 +0100
++++ mupen64plus-bundle-src-1.99.4/source/mupen64plus-input-sdl/src/plugin.c	2012-11-26 18:17:51.000000000 +0100
+@@ -24,6 +24,12 @@
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
++#include <errno.h>
++#include <fcntl.h>
++#include <unistd.h>
++#include <sys/types.h>
++#include <sys/stat.h>
++#include <sys/uio.h>
+ 
+ #include <SDL.h>
+ 
+@@ -133,6 +139,151 @@
+ 
+ static CONTROL temp_core_controlinfo[4];
+ 
++/* FIFO-Control functions by flo */
++static BUTTONS unpack_fifo_data(const char* buf)
++{
++	BUTTONS buttons;
++	
++	buttons.A_BUTTON     = (buf[0] &  1) ? 1 : 0;
++	buttons.B_BUTTON     = (buf[0] &  2) ? 1 : 0;
++	buttons.L_TRIG       = (buf[0] &  4) ? 1 : 0;
++	buttons.R_TRIG       = (buf[0] &  8) ? 1 : 0;
++	buttons.Z_TRIG       = (buf[0] & 16) ? 1 : 0;
++	buttons.START_BUTTON = (buf[0] & 32) ? 1 : 0;
++	buttons.R_DPAD       = (buf[1] &  1) ? 1 : 0;
++	buttons.L_DPAD       = (buf[1] &  2) ? 1 : 0;
++	buttons.U_DPAD       = (buf[1] &  4) ? 1 : 0;
++	buttons.D_DPAD       = (buf[1] &  8) ? 1 : 0;
++	buttons.R_CBUTTON    = (buf[2] &  2) ? 1 : 0;
++	buttons.L_CBUTTON    = (buf[2] &  4) ? 1 : 0;
++	buttons.U_CBUTTON    = (buf[2] &  8) ? 1 : 0;
++	buttons.D_CBUTTON    = (buf[2] & 16) ? 1 : 0;
++	
++	buttons.X_AXIS = buf[3] | ((buf[1] & 16) ? 128 : 0);
++	buttons.Y_AXIS = buf[4] | ((buf[1] & 32) ? 128 : 0);
++	
++	return buttons;
++}
++
++typedef struct
++{
++	int fd;
++	int good;
++	char buf[5];
++	int bufptr;
++	int recovering;
++	BUTTONS buttons;
++	
++} ctl_fifo_t;
++
++static ctl_fifo_t init_ctl_fifo(const char* path)
++{
++	ctl_fifo_t ctl_fifo;
++	ctl_fifo.fd=-1;
++	ctl_fifo.good=0;
++	ctl_fifo.bufptr=0;
++	ctl_fifo.recovering=0;
++
++	if (unlink(path) < 0)
++		if (errno!=ENOENT)
++		{
++			fprintf(stderr, "The control fifo (%s) could not be unlinked, continuing without remote control support: %s", path, strerror(errno));
++			ctl_fifo.good=0;
++			return ctl_fifo;
++		}
++
++
++	if (mkfifo(path, S_IRWXU)!=0)
++	{
++		fprintf(stderr, "The control fifo (%s) could not be created, continuing without remote control support: %s", path, strerror(errno));
++		ctl_fifo.good=0;
++		return ctl_fifo;
++	}
++
++	if ((ctl_fifo.fd=open(path, O_RDONLY | O_NONBLOCK))<0)
++	{
++		fprintf(stderr, "The control fifo (%s) could not be opened, continuing without remote control support: %s", path, strerror(errno));
++		ctl_fifo.good=0;
++		return ctl_fifo;
++	}
++
++	if (fcntl(ctl_fifo.fd, F_SETFL, O_NONBLOCK)==-1)
++	{
++		fprintf(stderr, "Could not set nonblocking io mode on control fifo, continuing without remote control support: %s", strerror(errno));
++		close(ctl_fifo.fd);
++		ctl_fifo.fd=-1;
++		ctl_fifo.good=0;
++		return ctl_fifo;
++	}
++	
++	ctl_fifo.good=1;
++	
++	return ctl_fifo;
++}
++
++static BUTTONS read_buttons_from_fifo(ctl_fifo_t* ctl_fifo)
++{
++	ssize_t bytes;
++	
++	if (ctl_fifo->recovering)
++	{
++		do
++		{
++			ctl_fifo->bufptr=0;
++			if ((bytes = read(ctl_fifo->fd, ctl_fifo->buf, 1)) == -1 && errno!=EAGAIN)
++			{
++				printf("read error!\n");
++			}
++			
++			//if (bytes==1) printf("\tread %c\n", ctl_fifo->buf[0]);
++		} while ((ctl_fifo->buf[0] & 128)==0 && bytes>0);
++		
++		if (ctl_fifo->buf[0] & 128)
++		{
++			printf("successfully recovered :)\n");
++			ctl_fifo->recovering=0;
++			ctl_fifo->bufptr=1;
++		}
++	}
++	
++	
++	if (!ctl_fifo->recovering)
++		do
++		{
++			if ((bytes = read(ctl_fifo->fd, ctl_fifo->buf+ctl_fifo->bufptr, sizeof(ctl_fifo->buf)-ctl_fifo->bufptr)) == -1
++				&& (errno!=EAGAIN))
++			{
++				printf("read error!\n");
++			}
++			else if (bytes>0)
++			{
++				ctl_fifo->bufptr+=bytes;
++				if (ctl_fifo->bufptr==sizeof(ctl_fifo->buf))
++				{
++					ctl_fifo->bufptr=0;
++					
++					if (ctl_fifo->buf[0] & 128)
++					{
++						ctl_fifo->buttons = unpack_fifo_data(ctl_fifo->buf);
++					}
++					else
++					{
++						printf("fifo data corrupt, entering recovery mode\n");
++						ctl_fifo->recovering=1;
++						break;
++					}					
++				}
++			}
++		} while (bytes>0);
++	
++	return ctl_fifo->buttons;
++}
++
++static ctl_fifo_t ctl_fifo;
++static int ctl_fifo_inited=0;
++static int ctl_fifo_takeover=0;
++
++
+ /* Mupen64Plus plugin functions */
+ EXPORT m64p_error CALL PluginStartup(m64p_dynlib_handle CoreLibHandle, void *Context,
+                                    void (*DebugCallback)(void *, int, const char *))
+@@ -454,6 +605,12 @@
+     SDL_Event event;
+     unsigned char mstate;
+ 
++	if (ctl_fifo_inited==0)
++	{
++		ctl_fifo=init_ctl_fifo("/var/tmp/mupen64plus_ctl");
++		ctl_fifo_inited=1;
++	}
++
+     // Handle keyboard input first
+     doSdlKeys(SDL_GetKeyState(NULL));
+     doSdlKeys(myKeyState);
+@@ -596,7 +753,21 @@
+ #ifdef _DEBUG
+     DebugMessage(M64MSG_VERBOSE, "Controller #%d value: 0x%8.8X\n", Control, *(int *)&controller[Control].buttons );
+ #endif
+-    *Keys = controller[Control].buttons;
++    
++    if (Control==0)
++    {
++		BUTTONS fromfifo = read_buttons_from_fifo(&ctl_fifo);
++		if (fromfifo.A_BUTTON)
++			ctl_fifo_takeover=1;
++		
++		if (ctl_fifo_takeover)
++			*Keys = fromfifo;
++		else
++			*Keys = controller[Control].buttons;
++		
++	}
++	else
++		*Keys = controller[Control].buttons;
+ 
+     /* handle mempack / rumblepak switching (only if rumble is active on joystick) */
+ #ifdef __linux__
