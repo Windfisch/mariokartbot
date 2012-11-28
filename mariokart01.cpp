@@ -697,8 +697,7 @@ try {
   joystick.reset();
   getchar();
 joystick.reset();
-joystick.press_a(true);
-getchar();
+
 #ifdef LINUX
   XorgGrabber capture("glN64");
 #endif

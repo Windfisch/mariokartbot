@@ -124,6 +124,121 @@ double linear(double x, double x1, double y1, double x2, double y2, bool clip=fa
 }
 
 
+int annotate_regions(Mat img) //img is treated as black/white (0, !=0)
+// changes img, and returns the number of found areas
+{
+	int region_index=1; // "0" means "no area"
+	for (int row = 0; row<img.rows; row++)
+	{
+		uchar* data=img.ptr<uchar>(row);
+
+		for (int col=0; col<img.cols;col++)
+		{
+			if (*data==255)
+			{
+				floodFill(img, Point(col,row), region_index);
+				region_index++;
+			}
+
+			data++;
+		}
+	}
+	return region_index-1;
+}
+
+Mat nicely_draw_regions(Mat annotated, int* area_cnt, int total_area_cnt, int largest_region)
+{
+	Mat result;
+	annotated.copyTo(result);
+	
+	// Das ist nur zum schönsein.
+	for (int row=0; row<result.rows; row++)
+	{
+		uchar* data=result.ptr<uchar>(row);
+
+		for (int col=0; col<result.cols;col++)
+		{
+			if (*data)
+			{
+				long long tmp = (long long)30000*(long)area_cnt[*data-1]/(long)total_area_cnt + 64;
+				if (tmp>200) tmp=200;
+				if (*data==largest_region) tmp=255;
+				*data=tmp;
+			}
+			
+			data++;
+		}
+	}
+}
+
+double only_retain_largest_region(Mat img, int* size)
+// img is a binary image
+// in *size, if non-NULL, the size of the largest area is stored.
+// returns: ratio between the second-largest and largest region
+//          0.0 means "that's the only region", 1.0 means "both had the same size!"
+// can be interpreted as 1.0 - "confidence".
+{
+		int n_regions = annotate_regions(img);
+		
+		// calculate the area of each region
+		int* area_cnt = new int[n_regions];
+		for (int i=0;i<n_regions;i++) area_cnt[i]=0;
+		int total_area_cnt=0;
+		
+		for (int row=0; row<img.rows; row++)
+		{
+			uchar* data=img.ptr<uchar>(row);
+
+			for (int col=0; col<img.cols;col++)
+			{
+				if (*data)
+				{
+					area_cnt[*data-1]++;
+					total_area_cnt++;
+				}
+				
+				data++;
+			}
+		}
+
+
+		
+		
+		// finde die größte und zweitgrößte fläche
+		int maxi=0, maxa=area_cnt[0], maxi2=-1;
+		for (int i=1;i<n_regions;i++)
+		{
+			if (area_cnt[i]>maxa)
+			{
+				maxa=area_cnt[i];
+				maxi2=maxi;
+				maxi=i;
+			}
+		}
+		
+		
+		// lösche alle bis auf die größte fläche
+		for (int row = 0; row<img.rows; row++)
+		{
+			uchar* data=img.ptr<uchar>(row);
+
+			for (int col=0; col<img.cols;col++)
+			{
+				if (*data)
+				{
+					if (*data!=maxi+1) *data=0; else *data=255;
+				}
+				data++;
+			}
+		}
+		
+		
+		if (size) *size=area_cnt[maxi];
+		
+		if (maxi2==-1) return 0;
+		else           return (double)area_cnt[maxi2]/(double)area_cnt[maxi];
+}
+
 #define AREA_HISTORY 10
 int alertcnt=21;
 int main(int argc, char* argv[])
@@ -177,95 +292,8 @@ int main(int argc, char* argv[])
 		erode(thres,tmp,Mat());
 		dilate(tmp,thres,Mat());
 		
-		int area_index=1; // "0" means "no area"
-		for (int row = 0; row<thres.rows; row++)
-		{
-			uchar* data=thres.ptr<uchar>(row);
-
-			for (int col=0; col<thres.cols;col++)
-			{
-				if (*data==255)
-				{
-					floodFill(thres, Point(col,row), area_index);
-					area_index++;
-				}
-
-				data++;
-			}
-		}
-		
-		
-		int* area_cnt = new int[area_index-1];
-		int total_area_cnt=0;
-		for (int i=0;i<area_index-1;i++) area_cnt[i]=0;
-		
-		for (int row = 0; row<thres.rows; row++)
-		{
-			uchar* data=thres.ptr<uchar>(row);
-
-			for (int col=0; col<thres.cols;col++)
-			{
-				if (*data)
-				{
-					area_cnt[*data-1]++;
-					total_area_cnt++;
-				}
-				
-				data++;
-			}
-		}
-
-
-		/*
-		// Das ist nur zum schönsein. man wird einfach den größten area_cnt nehmen wollen und den rest nullen.
-		for (int row = 0; row<thres.rows; row++)
-		{
-			uchar* data=thres.ptr<uchar>(row);
-
-			for (int col=0; col<thres.cols;col++)
-			{
-				if (*data)
-				{
-					long long tmp = (long long )30000*(long)area_cnt[*data-1]/(long)total_area_cnt + 64;
-					if (tmp>200) tmp=255;
-					*data=tmp;
-				}
-				
-				data++;
-			}
-		}
-		*/
-		
-		
-		// finde die größte und zweitgrößte fläche
-		int maxi=0, maxa=area_cnt[0], maxi2=-1;
-		for (int i=1;i<area_index-1;i++)
-		{
-			if (area_cnt[i]>maxa)
-			{
-				maxa=area_cnt[i];
-				maxi2=maxi;
-				maxi=i;
-			}
-		}
-		
-		
-		// lösche alle bis auf die größte fläche
-		for (int row = 0; row<thres.rows; row++)
-		{
-			uchar* data=thres.ptr<uchar>(row);
-
-			for (int col=0; col<thres.cols;col++)
-			{
-				if (*data)
-				{
-					if (*data!=maxi+1) *data=0; else *data=255;
-				}
-				data++;
-			}
-		}
-		
-		
+		int area_abs;
+		double area_ratio = only_retain_largest_region(thres, &area_abs);
 		
 		
 		dilate(thres, tmp, erode_kernel);
@@ -273,9 +301,8 @@ int main(int argc, char* argv[])
 
 
 		
-		Mat thres_tmp, thres_tmp_;
-		thres.copyTo(thres_tmp);
-		//thres_tmp=thres_tmp_.rowRange(0, 0.6*thres_tmp_.rows );
+		Mat thres_tmp;
+		thres.copyTo(thres_tmp); // this is needed because findContours destroys its input.
 		
 		vector<vector<Point> > contours;
 		vector<Vec4i> hierarchy;
@@ -521,21 +548,21 @@ int main(int argc, char* argv[])
 		
 		
 		area_history_sum-=area_history[area_history_ptr];
-		area_history[area_history_ptr]=area_cnt[maxi];
-		area_history_sum+=area_cnt[maxi];
+		area_history[area_history_ptr]=area_abs;
+		area_history_sum+=area_abs;
 		area_history_ptr=(area_history_ptr+1)%AREA_HISTORY;
 		int prev_area=area_history_sum/AREA_HISTORY;
 		
-		cout << "\r\e[2A area = "<<area_cnt[maxi]<<", \tvize = "<<((maxi2!=-1)?area_cnt[maxi2]:-1)<<", \tratio="<< ((maxi2!=-1)?(area_cnt[maxi]/area_cnt[maxi2]):-1 )<<"                  \n" <<
-		        "prev area = "<<prev_area<<",\tchange="<< (100*area_cnt[maxi]/prev_area -100) <<"%\n"<<flush;
+		cout << "\r\e[2A area = "<<area_abs<<",\tratio="<< area_ratio <<"                  \n" <<
+		        "prev area = "<<prev_area<<",\tchange="<< (100*area_abs/prev_area -100) <<"%\n"<<flush;
 		
-		if (maxi!=-1 && maxi2!=-1 && (area_cnt[maxi]/area_cnt[maxi2]) < 10)
+		if (area_ratio>0.1)
 		{
 			cout << "\nALERT: possibly split road!\n\n\n" << flush;
 			alertcnt=0;
 		}
 		
-		if (abs(100*area_cnt[maxi]/prev_area -100) >=10)
+		if (abs(100*area_abs/prev_area -100) >=10)
 		{
 			cout << "\nALERT: too fast road area change!\n\n\n" << flush;
 			alertcnt=0;
