@@ -240,6 +240,9 @@ double only_retain_largest_region(Mat img, int* size)
 }
 
 #define AREA_HISTORY 10
+#define SMOOTHEN_BOTTOM 25
+#define SMOOTHEN_MIDDLE 10
+#define ANG_SMOOTH 9
 int alertcnt=21;
 int main(int argc, char* argv[])
 {
@@ -309,230 +312,245 @@ int main(int argc, char* argv[])
 
 		findContours(thres_tmp, contours, hierarchy, CV_RETR_TREE, CV_CHAIN_APPROX_NONE, Point(0, 0));
 		
-		/// Draw contours
+		// Draw contours
 		Mat drawing = Mat::zeros( thres_tmp.size(), CV_8UC3 );
 		
-		//drawContours( drawing, contours, -1, Scalar(250,0,0) , 2,8, hierarchy);
-		
 		for( int i = 0; i< contours.size(); i++ )
 		{
-		  //if (hierarchy[i][3]<0) // no parent
-		  Scalar color = Scalar( 255 ,(hierarchy[i][3]<0)?255:0, (hierarchy[i][3]<0)?255:0 );
-		  drawContours( drawing, contours, i, color, 2, 8, hierarchy, 0, Point() );
+			Scalar color;
+
+
+			if (hierarchy[i][3]<0) // no parent
+				color=Scalar(255,255,255);
+			else // this is a sub-contour which is actually irrelevant for our needs
+				color=Scalar(255,0,0);
+
+			drawContours( drawing, contours, i, color, 2, 8, hierarchy, 0, Point() );
 		}
 
-		for( int i = 0; i< contours.size(); i++ )
-		{
-			if (hierarchy[i][3]<0)
+
+
+		for (int road_contour_idx=0; road_contour_idx<contours.size(); road_contour_idx++ )
+			if (hierarchy[road_contour_idx][3]<0) // this will be true for exactly one road_contour_idx.
 			{		
-				int lowy=0, lowj=-1;
-				int highy=drawing.rows;
+				vector<Point>& contour = contours[road_contour_idx]; // just a shorthand
 				
-				for (int j=0;j<contours[i].size(); j++)
+				if (!contour.size()>0) continue; // should never happen.
+				
+				
+				// find highest and lowest contour point. (where "low" means high y-coordinate)
+				int low_y=0, low_idx=-1;
+				int high_y=drawing.rows;
+				
+				for (int j=0;j<contour.size(); j++)
 				{
-					if (contours[i][j].y > lowy)
+					if (contour[j].y > low_y)
 					{
-						lowy=contours[i][j].y;
-						lowj=j;
+						low_y=contour[j].y;
+						low_idx=j;
 					}
-					if (contours[i][j].y < highy)
-						highy=contours[i][j].y;
+					if (contour[j].y < high_y)
+						high_y=contour[j].y;
 				}
 				
-				if (lowj!=-1)
-				{
-					std::rotate(contours[i].begin(),contours[i].begin()+lowj,contours[i].end());
+				assert(low_idx!=0);
+				
+				
+				
+				
 
-					// create contour map
-					for (int j=0;j<frame.cols;j++) // zero it
-						memset(contour_map[j],0,frame.rows*sizeof(**contour_map));
-					for (int j=0;j<contours[i].size(); j++) // fill it
-						contour_map[contours[i][j].x][contours[i][j].y]=j;
-					
-					int j;
-					for (j=0;j<contours[i].size();j++)
-						if (contours[i][j].y < contours[i][0].y-1) break;
-					for (;j<contours[i].size();j++)
-						circle(drawing, contours[i][j], 2, Scalar(	0,255-( j *255/contours[i].size()),( j *255/contours[i].size())));
-					
-					line(drawing, Point(0,highy), Point(drawing.cols,highy), Scalar(127,127,127));
-					
-					#define SMOOTHEN_BOTTOM 25
-					#define SMOOTHEN_MIDDLE 10
-					
-					
-					for (j=0;j<contours[i].size();j++)
-						if (contours[i][j].y < contours[i][0].y-1) break;
-		        
-					int init_j=j;
-					
-					double* angles = new double[contours[i].size()];
-					
-					for (;j<contours[i].size();j++)
-					{
-						int smoothen;
-						if (contours[i][j].y - thres.rows/2	 < 0)
-							smoothen=SMOOTHEN_MIDDLE;
-						else
-							smoothen= SMOOTHEN_MIDDLE + (SMOOTHEN_BOTTOM-SMOOTHEN_MIDDLE) * (contours[i][j].y - thres.rows/2) / (thres.rows/2);
-		        
-						int j1=(j+smoothen); if (j1 >= contours[i].size()) j1-=contours[i].size();
-						int j2=(j-smoothen); if (j2 < 0) j2+=contours[i].size();
-		        
-		        
-						angles[j] = atan2(contours[i][j1].y - contours[i][j2].y, contours[i][j1].x - contours[i][j2].x) * 180 /3.141592654;
-						if (angles[j]<0) angles[j]+=360;
-						int r,g,b;
-						hue2rgb(angles[j], &r, &g, &b);
-		        
-						circle(drawing, contours[i][j], 2, Scalar(b,g,r));
-		        
-						int x=drawing.cols-drawing.cols*(j-init_j)/(contours[i].size()-init_j);
-						line(drawing,Point(x,0), Point(x,10), Scalar(b,g,r));
-					}
+				// make the contour go "from bottom upwards and then downwards back to bottom".
+				std::rotate(contour.begin(),contour.begin()+low_idx,contour.end());
+
+				// create contour map
+				for (int j=0;j<frame.cols;j++) // zero it
+					memset(contour_map[j],0,frame.rows*sizeof(**contour_map));
+				for (int j=0;j<contour.size(); j++) // fill it
+					contour_map[contour[j].x][contour[j].y]=j;
+				
+				/*int j;
+				for (j=0;j<contour.size();j++)
+					if (contour[j].y < contour[0].y-1) break;
+				for (;j<contour.size();j++)
+					circle(drawing, contour[j], 2, Scalar(	0,255-( j *255/contour.size()),( j *255/contour.size())));
+				*/
+				
+				line(drawing, Point(0,high_y), Point(drawing.cols,high_y), Scalar(127,127,127));
+				
+				
+				
 			
-					#define ANG_SMOOTH 9
-					double* angle_derivative = new double[contours[i].size()];
-					for (j=init_j+ANG_SMOOTH;j<contours[i].size()-ANG_SMOOTH;j++)
-					{
-						int x=drawing.cols-drawing.cols*(j-init_j)/(contours[i].size()-init_j);
-						double ang_diff = angles[j+ANG_SMOOTH]-angles[j-ANG_SMOOTH];
-						
-						while (ang_diff<0) ang_diff+=360;
-						while (ang_diff>=360) ang_diff-=360;
-						if (ang_diff>=180) ang_diff=360-ang_diff;
-						
-						int c=abs(20* ang_diff/ANG_SMOOTH);
-						Scalar col=(c<256) ? Scalar(255-c,255-c,255) : Scalar(255,0,255);
-						line(drawing, Point(x,12), Point(x,22), col);
-						
-						int y=25+40-2*ang_diff/ANG_SMOOTH;
-						
-						angle_derivative[j] = (double)ang_diff / ANG_SMOOTH;
-						
-						double quality = ((double)ang_diff/ANG_SMOOTH) * linear(contours[i][j].y, highy, 1.0, highy+ (drawing.rows-highy)/10, 0.0, true) 
-						                                               * linear( abs(drawing.cols/2 - contours[i][j].x), 0.8*drawing.cols/2, 1.0, drawing.cols/2, 0.6, true);
-						//int y2=25+40+100-5*quality;
-						
-						line(drawing, Point(x,y), Point(x,y), Scalar(255,255,255));
-						//line(drawing, Point(x,25+40+100), Point(x,25+40+100), Scalar(127,127,127));
-						//line(drawing, Point(x,y2), Point(x,y2), Scalar(255,255,255));
-						
-						circle(drawing, contours[i][j], 2, col);
-					}
+				int first_nonbottom_idx = 0;
+				for (;first_nonbottom_idx<contour.size();first_nonbottom_idx++)
+					if (contour[first_nonbottom_idx].y < contour[0].y-1) break;
+			
+				
+				// calculate directional angle for each nonbottom contour point
+				double* angles = new double[contour.size()];
+				for (int j=first_nonbottom_idx; j<contour.size(); j++)
+				{
+					int smoothen=linear(contour[j].y, thres.rows/2  ,SMOOTHEN_MIDDLE, thres.rows,SMOOTHEN_BOTTOM, true);
 					
-					for (int j=init_j; j<init_j+ANG_SMOOTH; j++) angle_derivative[j]=angle_derivative[init_j+ANG_SMOOTH];
-					for (int j=contours[i].size()-ANG_SMOOTH; j<contours[i].size(); j++) angle_derivative[j]=angle_derivative[contours[i].size()-ANG_SMOOTH-1];
-					
-					double lastmax=-999999;
-					double bestquality=0.0;
-					double bestquality_max=0.0;
-					int bestquality_j=-1;
-					int bestquality_width=-1;
-					
-					#define MAX_HYST 0.8
-					for (int j=3;j<contours[i].size()-3;j++)
-					{
-						if (angle_derivative[j] > lastmax) lastmax=angle_derivative[j];
-						if (angle_derivative[j] < MAX_HYST*lastmax && angle_derivative[j+1] < MAX_HYST*lastmax && angle_derivative[j+2] < MAX_HYST*lastmax)
-						{
-							int j0=-1;
-							for (j0=j-1; j0>=0; j0--)
-								if (angle_derivative[j0] < MAX_HYST*lastmax && angle_derivative[j0-1] < MAX_HYST*lastmax && angle_derivative[j0-2] < MAX_HYST*lastmax)
-									break;
-							
-							if (lastmax > 5)
-							{
-								// the maximum area goes from j0 to j
-								int x=drawing.cols-drawing.cols*((j+j0)/2-init_j)/(contours[i].size()-init_j);
-								
-								double quality = ((double)angle_derivative[(j+j0)/2]) * linear(contours[i][j].y, highy, 1.0, highy+ (drawing.rows-highy)/10, 0.0, true) 
-																			   * linear( abs(drawing.cols/2 - contours[i][j].x), 0.8*drawing.cols/2, 1.0, drawing.cols/2, 0.6, true);
-								
-								if (quality>bestquality)
-								{
-									bestquality=quality;
-									bestquality_max=lastmax;
-									bestquality_j=(j+j0)/2;
-									bestquality_width=j-j0;
-								}
-								
-								line(drawing, Point(x,25+40-3*quality), Point(x, 25+40), Scalar(0,255,0));
-								circle(drawing, contours[i][(j+j0)/2], 1, Scalar(128,0,0));
-							}
-							lastmax=-999999;
-						}
-					}
-					
-					circle(drawing, contours[i][bestquality_j], 3, Scalar(255,255,0));
-					circle(drawing, contours[i][bestquality_j], 2, Scalar(255,255,0));
-					circle(drawing, contours[i][bestquality_j], 1, Scalar(255,255,0));
-					circle(drawing, contours[i][bestquality_j], 0, Scalar(255,255,0));
-
-					int antisaturation = 200-(200* bestquality/10.0);
-					if (antisaturation<0) antisaturation=0;
-					for (int j=0;j<bestquality_j-bestquality_width/2;j++)
-						circle(drawing, contours[i][j], 2, Scalar(255,antisaturation,255));
-					for (int j=bestquality_j+bestquality_width/2;j<contours[i].size();j++)
-						circle(drawing, contours[i][j], 2, Scalar(antisaturation,255,antisaturation));
-						
-					line(drawing, contours[i][bestquality_j], Point(drawing.cols/2, drawing.rows-drawing.rows/5), Scalar(0,64,64));
-					
-					int intersection = find_intersection_index(drawing.cols/2, drawing.rows-drawing.rows/5, contours[i][bestquality_j].x, contours[i][bestquality_j].y, contour_map);
-					if (intersection>=0) // should always be true
-					{
-						circle(drawing, contours[i][intersection], 2, Scalar(0,0,0));
-						circle(drawing, contours[i][intersection], 1, Scalar(0,0,0));
-
-						int xx=contours[i][bestquality_j].x;
-						int lastheight=-1;
-						if (intersection < bestquality_j) // im pinken bereich, also zu weit rechts
-						{
-							for (; xx>=0; xx--)
-							{
-								int intersection2 = find_intersection_index(drawing.cols/2, drawing.rows-drawing.rows/5, xx, contours[i][bestquality_j].y, contour_map);
-								if (intersection2<0)
-									break;
-								if (intersection2>=bestquality_j) // im gegenüberliegenden bereich?
-								{
-									if (contours[i][intersection2].y>=lastheight) xx++; // undo last step
-									break;
-								}
-								lastheight=contours[i][intersection2].y;
-							}
-						}
-						else if (intersection > bestquality_j) // im grünen bereich, also zu weit links
-						{
-							for (; xx<drawing.cols; xx++)
-							{
-								int intersection2 = find_intersection_index(drawing.cols/2, drawing.rows-drawing.rows/5, xx, contours[i][bestquality_j].y, contour_map);
-								if (intersection2<0)
-									break;
-								if (intersection2<=bestquality_j) // im gegenüberliegenden bereich?
-								{
-									if (contours[i][intersection2].y>=lastheight) xx--; // undo last step
-									break;
-								}
-								lastheight=contours[i][intersection2].y;
-							}
-						}
-						// else // genau den horizontpunkt getroffen
-							// do nothing
-						
-						int steering_point = find_intersection_index(drawing.cols/2, drawing.rows-drawing.rows/5, xx, contours[i][bestquality_j].y, contour_map, false);
-						if (steering_point>=0) // should be always true
-							line(drawing, contours[i][steering_point], Point(drawing.cols/2, drawing.rows-drawing.rows/5), Scalar(0,255,255));
-					}
-					
-					cout << "bestquality_width="<<bestquality_width <<",\tquality="<<bestquality<<",\t"<<"raw max="<<bestquality_max
-						 <<endl<<endl<<endl<<endl;
+			
+					// calculate left and right point for the difference quotient, possibly wrap.
+					int j1=(j+smoothen); while (j1 >= contour.size()) j1-=contour.size();
+					int j2=(j-smoothen); while (j2 < 0) j2+=contour.size();
+			
+			
+					// calculate angle, adjust it to be within [0, 360)
+					angles[j] = atan2(contour[j1].y - contour[j2].y, contour[j1].x - contour[j2].x) * 180/3.141592654;
+					if (angles[j]<0) angles[j]+=360;
 					
 					
-					delete [] angle_derivative;
-					delete [] angles;
+					// irrelevant drawing stuff
+					int r,g,b;
+					hue2rgb(angles[j], &r, &g, &b);
+					circle(drawing, contour[j], 2, Scalar(b,g,r));
+					int x=drawing.cols-drawing.cols*(j-first_nonbottom_idx)/(contour.size()-first_nonbottom_idx);
+					line(drawing,Point(x,0), Point(x,10), Scalar(b,g,r));
 				}
+		
+				// calculate derivative of angle for each nonbottom contour point
+				double* angle_derivative = new double[contour.size()];
+				for (int j=first_nonbottom_idx+ANG_SMOOTH; j<contour.size()-ANG_SMOOTH; j++)
+				{
+					// calculate angular difference, adjust to be within [0;360) and take the shorter way.
+					double ang_diff = angles[j+ANG_SMOOTH]-angles[j-ANG_SMOOTH];
+					while (ang_diff<0) ang_diff+=360;
+					while (ang_diff>=360) ang_diff-=360;
+					if (ang_diff>=180) ang_diff=360-ang_diff;
+					
+					angle_derivative[j] = (double)ang_diff / ANG_SMOOTH;
+					
+					
+
+					
+					// irrelevant drawing stuff
+					int x=drawing.cols-drawing.cols*(j-first_nonbottom_idx)/(contour.size()-first_nonbottom_idx);
+					int c=abs(20* ang_diff/ANG_SMOOTH);
+					Scalar col=(c<256) ? Scalar(255-c,255-c,255) : Scalar(255,0,255);
+					line(drawing, Point(x,12), Point(x,22), col);
+					
+					int y=25+40-2*ang_diff/ANG_SMOOTH;
+					line(drawing, Point(x,y), Point(x,y), Scalar(255,255,255));
+					circle(drawing, contour[j], 2, col);
+				}
+				
+				// poorly extrapolate the ANG_SMOOTH margins
+				for (int j=first_nonbottom_idx; j<first_nonbottom_idx+ANG_SMOOTH; j++) angle_derivative[j]=angle_derivative[first_nonbottom_idx+ANG_SMOOTH];
+				for (int j=contour.size()-ANG_SMOOTH; j<contour.size(); j++) angle_derivative[j]=angle_derivative[contour.size()-ANG_SMOOTH-1];
+				
+				
+				
+				
+				
+				double lastmax=-999999;
+				double bestquality=0.0;
+				double bestquality_max=0.0;
+				int bestquality_j=-1;
+				int bestquality_width=-1;
+				
+				#define MAX_HYST 0.8
+				for (int j=3;j<contour.size()-3;j++)
+				{
+					if (angle_derivative[j] > lastmax) lastmax=angle_derivative[j];
+					if (angle_derivative[j] < MAX_HYST*lastmax && angle_derivative[j+1] < MAX_HYST*lastmax && angle_derivative[j+2] < MAX_HYST*lastmax)
+					{
+						int j0=-1;
+						for (j0=j-1; j0>=0; j0--)
+							if (angle_derivative[j0] < MAX_HYST*lastmax && angle_derivative[j0-1] < MAX_HYST*lastmax && angle_derivative[j0-2] < MAX_HYST*lastmax)
+								break;
+						
+						if (lastmax > 5)
+						{
+							// the maximum area goes from j0 to j
+							int x=drawing.cols-drawing.cols*((j+j0)/2-first_nonbottom_idx)/(contour.size()-first_nonbottom_idx);
+							
+							double quality = ((double)angle_derivative[(j+j0)/2]) * linear(contour[j].y, high_y, 1.0, high_y+ (drawing.rows-high_y)/10, 0.0, true) 
+																		   * linear( abs(drawing.cols/2 - contour[j].x), 0.8*drawing.cols/2, 1.0, drawing.cols/2, 0.6, true);
+							
+							if (quality>bestquality)
+							{
+								bestquality=quality;
+								bestquality_max=lastmax;
+								bestquality_j=(j+j0)/2;
+								bestquality_width=j-j0;
+							}
+							
+							line(drawing, Point(x,25+40-3*quality), Point(x, 25+40), Scalar(0,255,0));
+							circle(drawing, contour[(j+j0)/2], 1, Scalar(128,0,0));
+						}
+						lastmax=-999999;
+					}
+				}
+				
+				circle(drawing, contour[bestquality_j], 3, Scalar(255,255,0));
+				circle(drawing, contour[bestquality_j], 2, Scalar(255,255,0));
+				circle(drawing, contour[bestquality_j], 1, Scalar(255,255,0));
+				circle(drawing, contour[bestquality_j], 0, Scalar(255,255,0));
+
+				int antisaturation = 200-(200* bestquality/10.0);
+				if (antisaturation<0) antisaturation=0;
+				for (int j=0;j<bestquality_j-bestquality_width/2;j++)
+					circle(drawing, contour[j], 2, Scalar(255,antisaturation,255));
+				for (int j=bestquality_j+bestquality_width/2;j<contour.size();j++)
+					circle(drawing, contour[j], 2, Scalar(antisaturation,255,antisaturation));
+					
+				line(drawing, contour[bestquality_j], Point(drawing.cols/2, drawing.rows-drawing.rows/5), Scalar(0,64,64));
+				
+				int intersection = find_intersection_index(drawing.cols/2, drawing.rows-drawing.rows/5, contour[bestquality_j].x, contour[bestquality_j].y, contour_map);
+				if (intersection>=0) // should always be true
+				{
+					circle(drawing, contour[intersection], 2, Scalar(0,0,0));
+					circle(drawing, contour[intersection], 1, Scalar(0,0,0));
+
+					int xx=contour[bestquality_j].x;
+					int lastheight=-1;
+					if (intersection < bestquality_j) // im pinken bereich, also zu weit rechts
+					{
+						for (; xx>=0; xx--)
+						{
+							int intersection2 = find_intersection_index(drawing.cols/2, drawing.rows-drawing.rows/5, xx, contour[bestquality_j].y, contour_map);
+							if (intersection2<0)
+								break;
+							if (intersection2>=bestquality_j) // im gegenüberliegenden bereich?
+							{
+								if (contour[intersection2].y>=lastheight) xx++; // undo last step
+								break;
+							}
+							lastheight=contour[intersection2].y;
+						}
+					}
+					else if (intersection > bestquality_j) // im grünen bereich, also zu weit links
+					{
+						for (; xx<drawing.cols; xx++)
+						{
+							int intersection2 = find_intersection_index(drawing.cols/2, drawing.rows-drawing.rows/5, xx, contour[bestquality_j].y, contour_map);
+							if (intersection2<0)
+								break;
+							if (intersection2<=bestquality_j) // im gegenüberliegenden bereich?
+							{
+								if (contour[intersection2].y>=lastheight) xx--; // undo last step
+								break;
+							}
+							lastheight=contour[intersection2].y;
+						}
+					}
+					// else // genau den horizontpunkt getroffen
+						// do nothing
+					
+					int steering_point = find_intersection_index(drawing.cols/2, drawing.rows-drawing.rows/5, xx, contour[bestquality_j].y, contour_map, false);
+					if (steering_point>=0) // should be always true
+						line(drawing, contour[steering_point], Point(drawing.cols/2, drawing.rows-drawing.rows/5), Scalar(0,255,255));
+				}
+				
+				cout << "bestquality_width="<<bestquality_width <<",\tquality="<<bestquality<<",\t"<<"raw max="<<bestquality_max
+					 <<endl<<endl<<endl<<endl;
+				
+				
+				delete [] angle_derivative;
+				delete [] angles;
 			}
-		}
 
 		/*Point midpoint=Point(drawing.cols/2, 250); // farbkreis
 		for (int a=0; a<360; a++)
