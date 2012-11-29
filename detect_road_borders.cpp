@@ -306,13 +306,7 @@ void find_steering_point(Mat orig_img, int** contour_map, Mat& drawing) // orig_
 				memset(contour_map[j],0,img.rows*sizeof(**contour_map));
 			for (int j=0;j<contour.size(); j++) // fill it
 				contour_map[contour[j].x][contour[j].y]=j;
-			
-			/*int j;
-			for (j=0;j<contour.size();j++)
-				if (contour[j].y < contour[0].y-1) break;
-			for (;j<contour.size();j++)
-				circle(drawing, contour[j], 2, Scalar(	0,255-( j *255/contour.size()),( j *255/contour.size())));
-			*/
+
 			
 			line(drawing, Point(0,high_y), Point(drawing.cols,high_y), Scalar(127,127,127));
 			
