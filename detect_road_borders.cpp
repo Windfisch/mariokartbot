@@ -428,7 +428,7 @@ int find_bestquality_index(const vector<Point>& contour, double* angle_derivativ
 	*bestquality_width_out = bestquality_width;
 }
 
-int find_ideal_line(int xlen, int ylen, vector<Point>& contour, int** contour_map, int bestquality_j, Mat drawing)
+int find_ideal_line(int xlen, int ylen, vector<Point>& contour, int** contour_map, int bestquality_j)
 // TODO: this code is crappy, slow, and uses brute force. did i mention it's crappy and slow?
 {
 	int intersection = find_intersection_index(xlen/2,                     ylen-ylen/5, 
@@ -442,9 +442,6 @@ int find_ideal_line(int xlen, int ylen, vector<Point>& contour, int** contour_ma
 	}
 	else
 	{
-		circle(drawing, contour[intersection], 2, Scalar(0,0,0));
-		circle(drawing, contour[intersection], 1, Scalar(0,0,0));
-
 		int xx=contour[bestquality_j].x;
 		int lastheight=-1;
 		if (intersection < bestquality_j) // too far on the right == intersecting the right border
@@ -493,35 +490,14 @@ int find_ideal_line(int xlen, int ylen, vector<Point>& contour, int** contour_ma
 }
 
 
-#define SMOOTHEN_BOTTOM 25
-#define SMOOTHEN_MIDDLE 10
-#define ANG_SMOOTH 9
-// return the index of the point to steer to.
-int find_steering_point(Mat orig_img, int** contour_map, Mat& drawing) // orig_img is a binary image
+void draw_it_all(Mat drawing, vector< vector<Point> >& contours, const vector<Vec4i>& hierarchy, int first_nonbottom_idx, vector<Point>& contour,
+                 double* angles, double* angle_derivative, int bestquality_j, int bestquality_width, int bestquality,
+                 int steering_point, Point origin_point)
 {
-	Mat img;
-	orig_img.copyTo(img); // this is needed because findContours destroys its input.
-	
-	vector<vector<Point> > contours;
-	vector<Vec4i> hierarchy;
-
-	findContours(img, contours, hierarchy, CV_RETR_TREE, CV_CHAIN_APPROX_NONE, Point(0, 0));
-	
-	int low_y, low_idx, high_y, first_nonbottom_idx;
-	vector<Point>& contour = prepare_and_get_contour(img.cols, img.rows, contours, hierarchy,
-	                                                 &low_y, &low_idx, &high_y, &first_nonbottom_idx);
-	                                                 
-	init_contour_map(contour, contour_map, img.cols, img.rows);
-	
 	// Draw contours
-	drawing = Mat::zeros( img.size(), CV_8UC3 );
 	drawContours(drawing, contours, -1, Scalar(255,0,0), 1, 8, hierarchy);
 
-
-	double* angles = calc_contour_angles(contour, first_nonbottom_idx, img.rows, SMOOTHEN_MIDDLE, SMOOTHEN_BOTTOM);
-	double* angle_derivative = calc_angle_deriv(angles, first_nonbottom_idx, contour.size(), ANG_SMOOTH);
-	
-	// irrelevant drawing stuff
+	// draw the angles
 	for (int j=first_nonbottom_idx; j<contour.size(); j++)
 	{
 		int x=drawing.cols-drawing.cols*(j-first_nonbottom_idx)/(contour.size()-first_nonbottom_idx);
@@ -545,19 +521,14 @@ int find_steering_point(Mat orig_img, int** contour_map, Mat& drawing) // orig_i
 		set_pixel(drawing, contour[j], col);
 	}
 	
-	int bestquality, bestquality_j, bestquality_width;
-	find_bestquality_index(contour, angle_derivative, img.cols, img.rows, high_y, first_nonbottom_idx, drawing,
-	                       &bestquality_j, &bestquality_width, &bestquality);
-	
-	// now we have a naive steering point. the way to it might lead
-	// us offroad, however.
-	
-	
+	// draw the point where the left touches the right road border
 	circle(drawing, contour[bestquality_j], 3, Scalar(255,255,0));
 	circle(drawing, contour[bestquality_j], 2, Scalar(255,255,0));
 	circle(drawing, contour[bestquality_j], 1, Scalar(255,255,0));
 	circle(drawing, contour[bestquality_j], 0, Scalar(255,255,0));
 
+	// draw the detected left and right border. low saturation means
+	// a worse detection result
 	int antisaturation = 200-(200* bestquality/10.0);
 	if (antisaturation<0) antisaturation=0;
 	for (int j=0;j<bestquality_j-bestquality_width/2;j++)
@@ -565,13 +536,49 @@ int find_steering_point(Mat orig_img, int** contour_map, Mat& drawing) // orig_i
 	for (int j=bestquality_j+bestquality_width/2;j<contour.size();j++)
 		set_pixel(drawing, contour[j], Scalar(antisaturation,255,antisaturation));
 		
-	line(drawing, contour[bestquality_j], Point(img.cols/2, img.rows-img.rows/5), Scalar(0,64,64));
+	// a direct line to where left touches right
+	line(drawing, contour[bestquality_j], origin_point, Scalar(0,64,64));
 	
-	int steering_point=find_ideal_line(img.cols,img.rows, contour, contour_map, bestquality_j, drawing);
-
 	if (steering_point>=0) // should be always true
-		line(drawing, contour[steering_point], Point(img.cols/2, img.rows-img.rows/5), Scalar(0,255,255));
+		line(drawing, contour[steering_point], origin_point, Scalar(0,255,255));
+}
+
+#define SMOOTHEN_BOTTOM 25
+#define SMOOTHEN_MIDDLE 10
+#define ANG_SMOOTH 9
+// return the index of the point to steer to.
+int find_steering_point(Mat orig_img, int** contour_map, Mat& drawing) // orig_img is a binary image
+{
+	Mat img;
+	orig_img.copyTo(img); // this is needed because findContours destroys its input.
+	drawing = Mat::zeros( img.size(), CV_8UC3 );
 	
+	vector<vector<Point> > contours;
+	vector<Vec4i> hierarchy;
+
+	findContours(img, contours, hierarchy, CV_RETR_TREE, CV_CHAIN_APPROX_NONE, Point(0, 0));
+	
+	int low_y, low_idx, high_y, first_nonbottom_idx;
+	vector<Point>& contour = prepare_and_get_contour(img.cols, img.rows, contours, hierarchy,
+	                                                 &low_y, &low_idx, &high_y, &first_nonbottom_idx);
+	                                                 
+	init_contour_map(contour, contour_map, img.cols, img.rows);
+	
+
+	double* angles = calc_contour_angles(contour, first_nonbottom_idx, img.rows, SMOOTHEN_MIDDLE, SMOOTHEN_BOTTOM);
+	double* angle_derivative = calc_angle_deriv(angles, first_nonbottom_idx, contour.size(), ANG_SMOOTH);
+	
+	int bestquality, bestquality_j, bestquality_width;
+	find_bestquality_index(contour, angle_derivative, img.cols, img.rows, high_y, first_nonbottom_idx, drawing,
+	                       &bestquality_j, &bestquality_width, &bestquality);
+	
+	// now we have a naive steering point. the way to it might lead
+	// us offroad, however.
+
+	int steering_point=find_ideal_line(img.cols,img.rows, contour, contour_map, bestquality_j);
+
+	
+	draw_it_all(drawing, contours, hierarchy, first_nonbottom_idx, contour, angles, angle_derivative,bestquality_j,bestquality_width,bestquality,steering_point, Point(img.cols/2, img.rows-img.rows/5));
 
 	delete [] angle_derivative;
 	delete [] angles;
