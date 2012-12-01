@@ -351,7 +351,7 @@ double* calc_angle_deriv(double* angles, int first_nonbottom_idx, int size, int 
 
 
 
-int find_bestquality_index(const vector<Point>& contour, double* angle_derivative, int high_y, int first_nonbottom_idx, Mat& drawing,
+int find_bestquality_index(const vector<Point>& contour, double* angle_derivative, int xlen, int ylen, int high_y, int first_nonbottom_idx, Mat& drawing,
                            int* bestquality_j_out, int* bestquality_width_out, int* bestquality_out)
 {
 	assert(bestquality_out!=NULL);
@@ -396,10 +396,10 @@ int find_bestquality_index(const vector<Point>& contour, double* angle_derivativ
 				// 1) the maximum has a high value AND
 				// 2) the corresponding point's y-coordinates are near the top image border AND
 				// 3) the corresponding point's x-coordinates are near the middle of the image, if in doubt
-				int middle_x = drawing.cols/2;
-				int distance_from_middle_x = abs(drawing.cols/2 - contour[j].x);
+				int middle_x = xlen/2;
+				int distance_from_middle_x = abs(xlen/2 - contour[j].x);
 				double quality = median_of_max_region
-								  *  linear( contour[j].y,               high_y,       1.0,       high_y+ (drawing.rows-high_y)/10, 0.0,   true)  // excessively punish points far away from the top border
+								  *  linear( contour[j].y,               high_y,       1.0,       high_y+ (ylen-high_y)/10, 0.0,   true)  // excessively punish points far away from the top border
 								  *  linear( distance_from_middle_x,     0.8*middle_x, 1.0,       middle_x,                         0.6,   true); // moderately punish point far away from the x-middle.
 				
 				// keep track of the best point
@@ -452,7 +452,7 @@ int find_ideal_line(int xlen, int ylen, vector<Point>& contour, int** contour_ma
 			// rotate the line to the left till it gets better
 			for (; xx>=0; xx--)
 			{
-				int intersection2 = find_intersection_index(drawing.cols/2, drawing.rows-drawing.rows/5, xx, contour[bestquality_j].y, contour_map);
+				int intersection2 = find_intersection_index(xlen/2, ylen-ylen/5, xx, contour[bestquality_j].y, contour_map);
 				if (intersection2<0) // won't happen anyway
 					break;
 				
@@ -469,9 +469,9 @@ int find_ideal_line(int xlen, int ylen, vector<Point>& contour, int** contour_ma
 		else if (intersection > bestquality_j) // too far on the left == intersecting the left border
 		{
 			// rotate the line to the right till it gets better
-			for (; xx<drawing.cols; xx++)
+			for (; xx<xlen; xx++)
 			{
-				int intersection2 = find_intersection_index(drawing.cols/2, drawing.rows-drawing.rows/5, xx, contour[bestquality_j].y, contour_map);
+				int intersection2 = find_intersection_index(xlen/2, ylen-ylen/5, xx, contour[bestquality_j].y, contour_map);
 				if (intersection2<0)// won't happen anyway
 					break;
 				
@@ -488,7 +488,7 @@ int find_ideal_line(int xlen, int ylen, vector<Point>& contour, int** contour_ma
 		// else // we directly met the bestquality point, i.e. where we wanted to go to.
 			// do nothing
 		
-		return find_intersection_index(drawing.cols/2, drawing.rows-drawing.rows/5, xx, contour[bestquality_j].y, contour_map, false);
+		return find_intersection_index(xlen/2, ylen-ylen/5, xx, contour[bestquality_j].y, contour_map, false);
 	}
 }
 
@@ -546,7 +546,7 @@ int find_steering_point(Mat orig_img, int** contour_map, Mat& drawing) // orig_i
 	}
 	
 	int bestquality, bestquality_j, bestquality_width;
-	find_bestquality_index(contour, angle_derivative, high_y, first_nonbottom_idx, drawing,
+	find_bestquality_index(contour, angle_derivative, img.cols, img.rows, high_y, first_nonbottom_idx, drawing,
 	                       &bestquality_j, &bestquality_width, &bestquality);
 	
 	// now we have a naive steering point. the way to it might lead
@@ -570,7 +570,7 @@ int find_steering_point(Mat orig_img, int** contour_map, Mat& drawing) // orig_i
 	int steering_point=find_ideal_line(img.cols,img.rows, contour, contour_map, bestquality_j, drawing);
 
 	if (steering_point>=0) // should be always true
-		line(drawing, contour[steering_point], Point(drawing.cols/2, drawing.rows-drawing.rows/5), Scalar(0,255,255));
+		line(drawing, contour[steering_point], Point(img.cols/2, img.rows-img.rows/5), Scalar(0,255,255));
 	
 
 	delete [] angle_derivative;
