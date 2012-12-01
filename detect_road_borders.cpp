@@ -352,7 +352,7 @@ double* calc_angle_deriv(double* angles, int first_nonbottom_idx, int size, int 
 
 
 int find_bestquality_index(const vector<Point>& contour, double* angle_derivative, int xlen, int ylen, int high_y, int first_nonbottom_idx, Mat& drawing,
-                           int* bestquality_j_out, int* bestquality_width_out, int* bestquality_out)
+                           int* bestquality_j_out, int* bestquality_width_out, int* bestquality_out, int* bestquality_max_out)
 {
 	assert(bestquality_out!=NULL);
 	assert(bestquality_j_out!=NULL);
@@ -378,7 +378,7 @@ int find_bestquality_index(const vector<Point>& contour, double* angle_derivativ
 			angle_derivative[j+1] < MAX_HYST*lastmax && 
 			angle_derivative[j+2] < MAX_HYST*lastmax)
 		{
-			if (lastmax > 5) // threshold the maximum.
+			if (lastmax > 7) // threshold the maximum.
 			{
 				// search backward for the begin of that maximum region
 				int j0;
@@ -398,7 +398,7 @@ int find_bestquality_index(const vector<Point>& contour, double* angle_derivativ
 				// 3) the corresponding point's x-coordinates are near the middle of the image, if in doubt
 				int middle_x = xlen/2;
 				int distance_from_middle_x = abs(xlen/2 - contour[j].x);
-				double quality = median_of_max_region
+				double quality = lastmax
 								  *  linear( contour[j].y,               high_y,       1.0,       high_y+ (ylen-high_y)/10, 0.0,   true)  // excessively punish points far away from the top border
 								  *  linear( distance_from_middle_x,     0.8*middle_x, 1.0,       middle_x,                         0.6,   true); // moderately punish point far away from the x-middle.
 				
@@ -424,6 +424,7 @@ int find_bestquality_index(const vector<Point>& contour, double* angle_derivativ
 	// now bestquality_j holds the index of the point with the best quality.
 	
 	*bestquality_out = bestquality;
+	*bestquality_max_out = bestquality_max;
 	*bestquality_j_out = bestquality_j;
 	*bestquality_width_out = bestquality_width;
 }
@@ -543,12 +544,15 @@ void draw_it_all(Mat drawing, vector< vector<Point> >& contours, const vector<Ve
 		line(drawing, contour[steering_point], origin_point, Scalar(0,255,255));
 }
 
-#define SMOOTHEN_BOTTOM 25
-#define SMOOTHEN_MIDDLE 10
+#define SMOOTHEN_BOTTOM 20
+#define SMOOTHEN_MIDDLE 7
 #define ANG_SMOOTH 9
 // return the index of the point to steer to.
-int find_steering_point(Mat orig_img, Point origin_point, int** contour_map, Mat& drawing) // orig_img is a binary image
+int find_steering_point(Mat orig_img, Point origin_point, int** contour_map, Mat& drawing, double* confidence) // orig_img is a binary image
+// confidence is between 0.0 (not sure at all) and 1.0 (definitely sure)
 {
+	assert(confidence!=NULL);
+	
 	Mat img;
 	orig_img.copyTo(img); // this is needed because findContours destroys its input.
 	drawing = Mat::zeros( img.size(), CV_8UC3 );
@@ -568,9 +572,9 @@ int find_steering_point(Mat orig_img, Point origin_point, int** contour_map, Mat
 	double* angles = calc_contour_angles(contour, first_nonbottom_idx, img.rows, SMOOTHEN_MIDDLE, SMOOTHEN_BOTTOM);
 	double* angle_derivative = calc_angle_deriv(angles, first_nonbottom_idx, contour.size(), ANG_SMOOTH);
 	
-	int bestquality, bestquality_j, bestquality_width;
+	int bestquality, bestquality_j, bestquality_width, bestquality_max;
 	find_bestquality_index(contour, angle_derivative, img.cols, img.rows, high_y, first_nonbottom_idx, drawing,
-	                       &bestquality_j, &bestquality_width, &bestquality);
+	                       &bestquality_j, &bestquality_width, &bestquality, &bestquality_max);
 	
 	// now we have a naive steering point. the way to it might lead
 	// us offroad, however.
@@ -578,10 +582,14 @@ int find_steering_point(Mat orig_img, Point origin_point, int** contour_map, Mat
 	int steering_point=find_ideal_line(img.cols,img.rows, contour, origin_point, contour_map, bestquality_j);
 
 	
-	draw_it_all(drawing, contours, hierarchy, first_nonbottom_idx, contour, angles, angle_derivative,bestquality_j,bestquality_width,bestquality,steering_point, origin_point);
-
+	draw_it_all(drawing, contours, hierarchy, first_nonbottom_idx, contour, angles, angle_derivative,bestquality_j,bestquality_width,bestquality_max,steering_point, origin_point);
+	cout << bestquality << "\t" << bestquality_max<<endl;
 	delete [] angle_derivative;
 	delete [] angles;
+	
+	*confidence = (bestquality-1.0) / 3.0;
+	if (*confidence<0.0) *confidence=0;
+	if (*confidence>1.0) *confidence=1.0;
 	return steering_point;
 }
 
@@ -648,7 +656,8 @@ int main(int argc, char* argv[])
 
 
 		Mat drawing;
-		find_steering_point(thres, Point(thres.cols/2, thres.rows-thres.rows/5), contour_map, drawing);
+		double confidence;
+		find_steering_point(thres, Point(thres.cols/2, thres.rows-2*thres.rows/5), contour_map, drawing, &confidence);
 
 		
 		
@@ -658,8 +667,9 @@ int main(int argc, char* argv[])
 		area_history_ptr=(area_history_ptr+1)%AREA_HISTORY;
 		int prev_area=area_history_sum/AREA_HISTORY;
 		
-		cout << "\r\e[2A area = "<<area_abs<<",\tratio="<< area_ratio <<"                  \n" <<
+		cout << "area = "<<area_abs<<",\tratio="<< area_ratio <<"                  \n" <<
 		        "prev area = "<<prev_area<<",\tchange="<< (100*area_abs/prev_area -100) <<"%\n"<<flush;
+		cout << "confidence = "<<confidence<<endl;
 		
 		if (area_ratio>0.1)
 		{
