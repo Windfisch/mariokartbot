@@ -428,10 +428,10 @@ int find_bestquality_index(const vector<Point>& contour, double* angle_derivativ
 	*bestquality_width_out = bestquality_width;
 }
 
-int find_ideal_line(int xlen, int ylen, vector<Point>& contour, int** contour_map, int bestquality_j)
+int find_ideal_line(int xlen, int ylen, vector<Point>& contour, Point origin_point, int** contour_map, int bestquality_j)
 // TODO: this code is crappy, slow, and uses brute force. did i mention it's crappy and slow?
 {
-	int intersection = find_intersection_index(xlen/2,                     ylen-ylen/5, 
+	int intersection = find_intersection_index(origin_point.x,           origin_point.y, 
 											   contour[bestquality_j].x, contour[bestquality_j].y,        contour_map);
 	int steering_point=-1;
 	
@@ -449,7 +449,7 @@ int find_ideal_line(int xlen, int ylen, vector<Point>& contour, int** contour_ma
 			// rotate the line to the left till it gets better
 			for (; xx>=0; xx--)
 			{
-				int intersection2 = find_intersection_index(xlen/2, ylen-ylen/5, xx, contour[bestquality_j].y, contour_map);
+				int intersection2 = find_intersection_index(origin_point.x, origin_point.y, xx, contour[bestquality_j].y, contour_map);
 				if (intersection2<0) // won't happen anyway
 					break;
 				
@@ -468,7 +468,7 @@ int find_ideal_line(int xlen, int ylen, vector<Point>& contour, int** contour_ma
 			// rotate the line to the right till it gets better
 			for (; xx<xlen; xx++)
 			{
-				int intersection2 = find_intersection_index(xlen/2, ylen-ylen/5, xx, contour[bestquality_j].y, contour_map);
+				int intersection2 = find_intersection_index(origin_point.x, origin_point.y, xx, contour[bestquality_j].y, contour_map);
 				if (intersection2<0)// won't happen anyway
 					break;
 				
@@ -485,7 +485,7 @@ int find_ideal_line(int xlen, int ylen, vector<Point>& contour, int** contour_ma
 		// else // we directly met the bestquality point, i.e. where we wanted to go to.
 			// do nothing
 		
-		return find_intersection_index(xlen/2, ylen-ylen/5, xx, contour[bestquality_j].y, contour_map, false);
+		return find_intersection_index(origin_point.x,origin_point.y, xx, contour[bestquality_j].y, contour_map, false);
 	}
 }
 
@@ -547,7 +547,7 @@ void draw_it_all(Mat drawing, vector< vector<Point> >& contours, const vector<Ve
 #define SMOOTHEN_MIDDLE 10
 #define ANG_SMOOTH 9
 // return the index of the point to steer to.
-int find_steering_point(Mat orig_img, int** contour_map, Mat& drawing) // orig_img is a binary image
+int find_steering_point(Mat orig_img, Point origin_point, int** contour_map, Mat& drawing) // orig_img is a binary image
 {
 	Mat img;
 	orig_img.copyTo(img); // this is needed because findContours destroys its input.
@@ -575,10 +575,10 @@ int find_steering_point(Mat orig_img, int** contour_map, Mat& drawing) // orig_i
 	// now we have a naive steering point. the way to it might lead
 	// us offroad, however.
 
-	int steering_point=find_ideal_line(img.cols,img.rows, contour, contour_map, bestquality_j);
+	int steering_point=find_ideal_line(img.cols,img.rows, contour, origin_point, contour_map, bestquality_j);
 
 	
-	draw_it_all(drawing, contours, hierarchy, first_nonbottom_idx, contour, angles, angle_derivative,bestquality_j,bestquality_width,bestquality,steering_point, Point(img.cols/2, img.rows-img.rows/5));
+	draw_it_all(drawing, contours, hierarchy, first_nonbottom_idx, contour, angles, angle_derivative,bestquality_j,bestquality_width,bestquality,steering_point, origin_point);
 
 	delete [] angle_derivative;
 	delete [] angles;
@@ -648,7 +648,7 @@ int main(int argc, char* argv[])
 
 
 		Mat drawing;
-		find_steering_point(thres, contour_map, drawing);
+		find_steering_point(thres, Point(thres.cols/2, thres.rows-thres.rows/5), contour_map, drawing);
 
 		
 		
