@@ -1,0 +1,33 @@
+This bot shall be able to play Mario Kart using the Mupen64Plus emulator.
+It works both on Linux and on FreeBSD, but there are some differences:
+	- under Linux, we can uinput to emulate a joystick. This works
+	  with an existing mupen64plus installation, you just need to
+	  create a suitable button mapping. currently, you can only create
+	  it by uncommenting the code block with "press enter to steer left"
+	  in mariokart.cpp.
+	- under FreeBSD, you have to (and under Linux, you probably can)
+	  use a patched version of the Mupen64Plus-SDL-Input-plugin.
+	  Under FreeBSD, build mupen64plus from ports as usual, but then:
+	  - cd into /usr/ports/emulators/mupen64plus-input-sdl/
+	  - run 'make patch'
+	  - cd work, and apply mupen64plus-input-sdl.patch from this repo
+	  - cd .. and make install as usual
+	  The input plugin will now create a FIFO/named pipe at 
+	  /var/tmp/mupen64plus_ctl, which the bot writes to.
+	  This does not affect normal gaming experience, the "external
+	  control" only kicks in once the FIFO is written. Then, you cannot
+	  use your "actual" controls any more.
+	  
+The program currently expects ~/MarioKart64.rom to be a valid
+Mario Kart 64 ROM file which is playable by Mupen64Plus.
+(Please note that it might be illegal to download the file from the
+internet, and it definitely is illegal if you don't own the game AND
+a N64. Don't do that.)
+
+When you start ./mariokart, a Mupen64Plus instance is launched.
+You have to navigate to a Time Trial with a suitable course (only
+tested with Flower Cup -> Mario Raceway so far), start the game, and
+wait for the small ghost to disappear. (You probably want to save the
+state using F5 now; in future, you can get here quickly with F7).
+
+Then press "ENTER" in the mariokart bot command window and enjoy :)
