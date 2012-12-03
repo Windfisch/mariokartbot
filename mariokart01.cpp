@@ -44,6 +44,7 @@
 
 
 #include <iostream>
+#include <list>
 #include <xcb/xcb.h>
 #include <assert.h>
 
@@ -529,6 +530,8 @@ float flopow(float b, float e)
 {
 	return (b>=0.0) ? (powf(b,e)) : (-powf(-b,e));
 }
+
+
 
 
 
