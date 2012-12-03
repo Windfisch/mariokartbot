@@ -1,12 +1,11 @@
 /*
- * unbenannt.cxx
+ * mariokart.cpp
  * 
- * Copyright 2012 Unknown <flo@archie>
+ * Copyright 2012 Florian Jung <florian.a.jung@web.de>
  * 
  * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
+ * it under the terms of the GNU General Public License Version 3
+ * as published by the Free Software Foundation.
  * 
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -36,6 +35,7 @@
 #include "util.h"
 #include "steer_interface.h"
 #include "naive_steerer.h"
+#include "horizon_steerer.h"
 #include "road_thresholder_iface.h"
 #include "road_thresholder.h"
 
@@ -307,6 +307,7 @@ joystick.reset();
 
   
   SteerIface* steerer = new NaiveSteerer(xlen/2, 0.58*ylen);
+//  HorizonSteerer* hor_steerer = new HorizonSteerer(xlen,ylen);
   RoadThresholderIface* road_thresholder = new RoadThresholder();
   
   while(1)
@@ -395,6 +396,8 @@ joystick.reset();
 
 	steerer->process_image(img_thres2);
 	double steer_value = steerer->get_steer_data();
+	
+//	hor_steerer->process_image(img_thres2);
 
   Mat steer=Mat::zeros(20,1920,CV_8U);
   steer.col( steer.cols /2 )=128;

@@ -1,3 +1,24 @@
+/*
+ * horizon_steerer.h
+ * 
+ * Copyright 2012 Florian Jung <florian.a.jung@web.de>
+ * 
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License Version 3
+ * as published by the Free Software Foundation.
+ * 
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ * 
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
+ * MA 02110-1301, USA.
+ */
+
+
 #ifndef __HORIZON_STEERER_H__
 #define __HORIZON_STEERER_H__
 
@@ -12,6 +33,11 @@ public:
 	HorizonSteerer(int xlen_, int ylen_);
 	virtual ~HorizonSteerer() {};
 	int find_ideal_line(vector<Point>& contour, Point origin_point, int** contour_map, int bestquality_j);
+	
+	virtual void process_image(const Mat& img);
+	virtual double get_steer_data();
+	virtual double get_confidence();
+
 
 private:
 	int find_intersection_index(int x0, int y0, int x1, int y1, int** contour_map, bool stop_at_endpoint=true);
@@ -32,6 +58,8 @@ private:
 
 	int xlen;
 	int ylen;
+	Mat erode_kernel;
+	int** contour_map;
 };
 
 #endif

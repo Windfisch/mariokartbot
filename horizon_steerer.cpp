@@ -1,9 +1,30 @@
+/*
+ * horizon_steerer.cpp
+ * 
+ * Copyright 2012 Florian Jung <florian.a.jung@web.de>
+ * 
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License Version 3
+ * as published by the Free Software Foundation.
+ * 
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ * 
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
+ * MA 02110-1301, USA.
+ */
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <iostream>
 #include <math.h>
 #include <opencv2/opencv.hpp>
 #include "horizon_steerer.h"
+#include "util.h"
 
 using namespace std;
 using namespace cv;
@@ -17,7 +38,37 @@ HorizonSteerer::HorizonSteerer(int xlen_, int ylen_)
 	contour_map=new int*[xlen];
 	for (int i=0;i<xlen;i++)
 		contour_map[i]=new int[ylen];
+		
+	erode_kernel = circle_mat(10);
+
+	contour_map=new int*[xlen];
+	for (int i=0;i<xlen;i++)
+		contour_map[i]=new int[ylen];
 }
+
+
+void HorizonSteerer::process_image(const Mat& img_)
+{
+	Mat img;
+	img_.copyTo(img);
+	
+	int area_abs;
+	double area_ratio = only_retain_largest_region(img, &area_abs);
+	
+	Mat tmp;
+	dilate(img, tmp, erode_kernel);
+	erode(tmp, img, erode_kernel);
+
+
+	Mat drawing;
+	double confidence;
+	find_steering_point(img, Point(img.cols/2, img.rows-2*img.rows/5), contour_map, drawing, &confidence);
+	
+}
+
+double HorizonSteerer::get_steer_data() { return 0.0; }
+double HorizonSteerer::get_confidence() { return 1.0; }
+
 
 
 static void set_pixel(Mat m, Point p, Scalar color)
