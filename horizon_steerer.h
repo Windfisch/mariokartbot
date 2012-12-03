@@ -6,11 +6,11 @@
 
 using namespace cv;
 
-class HorizonSteerer : SteerIface
+class HorizonSteerer : public SteerIface
 {
 public:
 	HorizonSteerer(int xlen_, int ylen_);
-	virtual ~HorizonSteerer();
+	virtual ~HorizonSteerer() {};
 	int find_ideal_line(vector<Point>& contour, Point origin_point, int** contour_map, int bestquality_j);
 
 private:

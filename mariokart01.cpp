@@ -20,8 +20,8 @@
  */
 
 
-//#define FREEBSD
-#define LINUX
+#define FREEBSD
+//#define LINUX
 
 #include <vector>
 #include <unistd.h>
@@ -42,6 +42,11 @@
 #include <sys/stat.h>
 #include <sys/uio.h>
 
+#include "util.h"
+#include "steer_interface.h"
+#include "naive_steerer.h"
+#include "road_thresholder_iface.h"
+#include "road_thresholder.h"
 
 #include <iostream>
 #include <list>
@@ -492,25 +497,6 @@ void Joystick::process()
 #define IMG_HISTORY 3
 
 
-Mat circle_mat(int radius)
-{
-  Mat result(radius*2+1, radius*2+1, CV_8U);
-  for (int x=0; x<=result.cols/2; x++)
-    for (int y=0; y<=result.rows/2; y++)
-    {
-      unsigned char& p1 = result.at<unsigned char>(result.cols/2 + x, result.rows/2 + y);
-      unsigned char& p2 = result.at<unsigned char>(result.cols/2 - x, result.rows/2 + y);
-      unsigned char& p3 = result.at<unsigned char>(result.cols/2 + x, result.rows/2 - y);
-      unsigned char& p4 = result.at<unsigned char>(result.cols/2 - x, result.rows/2 - y);
-      
-      if ( x*x + y*y < radius*radius )
-        p1=p2=p3=p4=255;
-      else
-        p1=p2=p3=p4=0;
-    }
-    
-  return result;
-}
 
 
 
@@ -523,12 +509,6 @@ void mouse_callback(int event, int x, int y, int flags, void* userdata)
 		crosshair_x=x;
 		crosshair_y=y;
 	}
-}
-
-
-float flopow(float b, float e)
-{
-	return (b>=0.0) ? (powf(b,e)) : (-powf(-b,e));
 }
 
 
@@ -708,8 +688,6 @@ joystick.reset();
   XorgGrabber capture("Mupen64Plus OpenGL Video");
 #endif
 
-  int road_0=77, road_1=77, road_2=77;
-  
   Mat transform;
   
   bool first=true;
@@ -730,29 +708,20 @@ joystick.reset();
   
   VideoWriter img_writer, thres_writer, thres2_writer;
   
-  
-  Mat img_history[IMG_HISTORY];
-  int history_pointer=0;
-  
-  while(1)
-  {
-    
-  Mat img_;
-  
-    capture.read(img_);
-  
-  if (first)
-  {
-    xlen=img_.cols;
-    ylen=img_.rows;
-    
-    crosshair_x=xlen/2;
-    crosshair_y=0.58*ylen;
-    
-    Point2f src_pts[4] =  { Point2f(0, ylen), Point2f(xlen, ylen),        Point2f(xlen* (.5 - 0.13), ylen/2), Point2f(xlen* (.5 + .13), ylen/2) };
-    //Point2f dest_pts[4] = { Point2f(0, ylen), Point2f(trans_width, ylen), Point2f(0, trans_height),       Point2f(0, trans_height) };
-    Point2f dest_pts[4] = { Point2f(trans_width/2 - road_width/2, trans_height), Point2f(trans_width/2 + road_width/2, trans_height),        Point2f(trans_width/2 - road_width/2, trans_height/2), Point2f(trans_width/2 + road_width/2, trans_height/2) };
-    transform=getPerspectiveTransform(src_pts, dest_pts);
+	Mat img_;
+
+	capture.read(img_);
+
+	xlen=img_.cols;
+	ylen=img_.rows;
+
+	crosshair_x=xlen/2;
+	crosshair_y=0.58*ylen;
+
+	Point2f src_pts[4] =  { Point2f(0, ylen), Point2f(xlen, ylen),        Point2f(xlen* (.5 - 0.13), ylen/2), Point2f(xlen* (.5 + .13), ylen/2) };
+	//Point2f dest_pts[4] = { Point2f(0, ylen), Point2f(trans_width, ylen), Point2f(0, trans_height),       Point2f(0, trans_height) };
+	Point2f dest_pts[4] = { Point2f(trans_width/2 - road_width/2, trans_height), Point2f(trans_width/2 + road_width/2, trans_height),        Point2f(trans_width/2 - road_width/2, trans_height/2), Point2f(trans_width/2 + road_width/2, trans_height/2) };
+	transform=getPerspectiveTransform(src_pts, dest_pts);
 
 	//img_writer.open("img.mpg", CV_FOURCC('P','I','M','1'), 30, Size(xlen,ylen), false);
 	img_writer.open("img.mpg", CV_FOURCC('P','I','M','1'), 30, Size(xlen,ylen), false);
@@ -764,22 +733,27 @@ joystick.reset();
 		cout << "ERROR: could not open video files!" << !img_writer.isOpened() << !thres_writer.isOpened() << !thres2_writer.isOpened() <<endl;
 	}
 
-    first=false;
-  }
+  
+  SteerIface* steerer = new NaiveSteerer(xlen/2, 0.58*ylen);
+  RoadThresholderIface* road_thresholder = new RoadThresholder();
+  
+  while(1)
+  {
+    capture.read(img_);
+  
   assert ((img_.cols==xlen) && (img_.rows==ylen));
     
-  Mat img, img2;
+  Mat img;
   img_.convertTo(img, CV_8UC3, 1); //FINDMICH
-  img.copyTo(img2);
   img.copyTo(thread1_img); sem_post(&thread1_go);
   
   #ifdef NO_BRIGHTNESS
-  //assert(img2.type()==CV_8UC3);
-  for (int row = 0; row<img2.rows; row++)
+  //assert(img.type()==CV_8UC3);
+  for (int row = 0; row<img.rows; row++)
   {
-    uchar* data=img2.ptr<uchar>(row);
+    uchar* data=img.ptr<uchar>(row);
     
-    for (int col=0; col<img2.cols;col++)
+    for (int col=0; col<img.cols;col++)
     {
       int sum=data[0] + data[1] + data[2];
       if (sum>0)
@@ -794,108 +768,26 @@ joystick.reset();
         data[1]=255/3;
         data[2]=255/3;
       }
-      data+=img2.step[1];
+      data+=img.step[1];
     }
   }
   #endif
   
   
-  Mat img_diff(img2.rows, img2.cols, CV_8U);
-  int hist[256];
-  for (int i=0; i<256; i++) hist[i]=0;
-  for (int row = 0; row<img2.rows; row++)
-  {
-    uchar* data=img2.ptr<uchar>(row);
-    uchar* data_out=img_diff.ptr<uchar>(row);
-    
-    for (int col=0; col<img2.cols;col++)
-    {
-      int diff = (abs((int)data[0] - road_0) + abs((int)data[1] - road_1) + abs((int)data[2] - road_2)) /3;
-      if (diff>255) { cout << "error, diff is" << diff << endl; diff=255; }
-      *data_out=diff;
-      hist[diff]++;
-      data+=img2.step[1];
-      data_out++;
-    }
-  }
-  
-  int hist2[256];
-  for (int i=0; i<256; i++)
-  {
-    int sum=0;
-    for (int j=-HIST_SMOOTH; j<=HIST_SMOOTH; j++)
-    {
-      if (i+j < 0 || i+j > 255) continue;
-      sum+=hist[i+j];
-    }
-    hist2[i]=sum;
-  }
-  
-  int cumul=0;
-  int x_begin=0;
-  for (x_begin=0;x_begin<256;x_begin++)
-  {
-    cumul+=hist[x_begin];
-    if (cumul > img2.rows*img2.cols/100) break;
-  }
-  
-  int hist_max=0;
-  int thres;
-  for (int i=0; i<256; i++)
-  {
-    if (hist2[i]>hist_max) hist_max=hist2[i];
-    if ((hist2[i] < hist_max/2) && (i>x_begin))
-    {
-      thres=i;
-      break;
-    }
-  }
-  
-  //thres-=thres/4;
-  
-  
-  Mat img_hist(100,256, CV_8U);
-  for (int row = 0; row<img_hist.rows; row++)
-  {
-    uchar* data=img_hist.ptr<uchar>(row);
-    
-    for (int col=0; col<img_hist.cols;col++)
-    {
-      *data=255;
-      if (col==thres) *data=127;
-      if (col==x_begin) *data=0;
-      if (hist2[col] > (img_hist.rows-row)*800) *data=0;
-      data++;
-    }
-  }
-  
-  Mat img_thres(img_diff.rows, img_diff.cols, img_diff.type());
-  threshold(img_diff, img_thres, thres, 255, THRESH_BINARY_INV);
+  road_thresholder->process_image(img);
+  Mat img_thres = road_thresholder->get_road();
   
   Mat img_eroded(img_thres.rows, img_thres.cols, img_thres.type());
   Mat img_tmp(img_thres.rows, img_thres.cols, img_thres.type());
   Mat img_thres2(img_thres.rows, img_thres.cols, img_thres.type());
-  Mat img_stddev(img_thres.rows, img_thres.cols, img_thres.type());
-  img_stddev=Mat::zeros(img_thres.rows, img_thres.cols,  img_thres.type());
   
   erode(img_thres, img_tmp, erode_2d_small);
-  img_tmp.copyTo(img_eroded);
   dilate(img_tmp, img_thres, erode_2d_small);
-
   dilate(img_thres, img_tmp, erode_2d_big);
   erode(img_tmp, img_thres2, erode_2d_big);
 
 
 
-
-  img_thres.copyTo(img_history[history_pointer]);
-  
-  Mat historized=img_history[0]/IMG_HISTORY;
-  for (int i=1; i<IMG_HISTORY; i++)
-    if (historized.cols == img_history[i].cols)
-	  historized+=img_history[i]/IMG_HISTORY;
-	
-  history_pointer=(history_pointer+1)%IMG_HISTORY;
 
 
 
@@ -905,85 +797,10 @@ joystick.reset();
   
   assert(img.rows==img_eroded.rows);
   assert(img.cols==img_eroded.cols);
-  int avg_sum=0;
-  int r0=0, r1=0, r2=0;
-  int left_sum=0, right_sum=0;
-  for (int row = 0; row<img2.rows; row++)
-  {
-    uchar* data=img2.ptr<uchar>(row);
-    uchar* mask=img_eroded.ptr<uchar>(row);
+
     
-    int mean_value_line_sum=0;
-    int mean_value_line_cnt=0;
-    int mean_value_line;
-    for (int col=0; col<img2.cols;col++)
-    {
-      if (*mask)
-      {
-		if (row<=crosshair_y)
-		{
-			if (col < crosshair_x)
-				left_sum++;
-			else
-				right_sum++;
-		}
-		  
-        avg_sum++;
-        mean_value_line_sum+=col;
-        mean_value_line_cnt++;
-        r0+=data[0];
-        r1+=data[1];
-        r2+=data[2];
-      }
-      
-      data+=img.step[1];
-      mask++;
-    }
-    
-    if (mean_value_line_cnt)
-    {
-		mean_value_line=mean_value_line_sum/mean_value_line_cnt;
-		int variance_line=0;
-		int stddev_line;
-		uchar* mask=img_eroded.ptr<uchar>(row);
-		data=img2.ptr<uchar>(row);
-		for (int col=0; col<img2.cols;col++)
-		{
-		  if (*mask)
-			variance_line+=(col-mean_value_line)*(col-mean_value_line);
-		  
-		  data+=img2.step[1];
-		  mask++;
-		}
-		variance_line/=mean_value_line_cnt;
-		stddev_line=sqrt(variance_line);
-		if (mean_value_line>1 && mean_value_line < img2.cols-2)
-		{
-			img_stddev.ptr<uchar>(row)[mean_value_line-1]=255;
-			img_stddev.ptr<uchar>(row)[mean_value_line]=255;
-			img_stddev.ptr<uchar>(row)[mean_value_line+1]=255;
-		}
-		if ((mean_value_line+stddev_line)>1 && (mean_value_line+stddev_line) < img2.cols-2)
-		{
-			img_stddev.ptr<uchar>(row)[mean_value_line-1+stddev_line]=255;
-			img_stddev.ptr<uchar>(row)[mean_value_line+stddev_line]=255;
-			img_stddev.ptr<uchar>(row)[mean_value_line+1+stddev_line]=255;
-		}
-		if ((mean_value_line-stddev_line)>1 && (mean_value_line-stddev_line) < img2.cols-2)
-		{
-			img_stddev.ptr<uchar>(row)[mean_value_line-1-stddev_line]=255;
-			img_stddev.ptr<uchar>(row)[mean_value_line-stddev_line]=255;
-			img_stddev.ptr<uchar>(row)[mean_value_line+1-stddev_line]=255;
-		}
-	}
-  }
   
-  if (avg_sum>20)
-  {
-	  road_0=r0/avg_sum;
-	  road_1=r1/avg_sum;
-	  road_2=r2/avg_sum;
-	}
+
 
 /*
   Mat img_perspective(trans_height, trans_width, img_thres.type());
@@ -999,20 +816,19 @@ joystick.reset();
   */
 
   
-  img2.row(crosshair_y)=Scalar(255,0,0);
-  img2.col(crosshair_x)=Scalar(255,0,0);
-  img_diff.row(crosshair_y)=255;
-  img_diff.col(crosshair_x)=255;
+  img.row(crosshair_y)=Scalar(255,0,0);
+  img.col(crosshair_x)=Scalar(255,0,0);
   img_thres2.row(crosshair_y)=128;
   img_thres2.col(crosshair_x)=128;
-  img_stddev.row(crosshair_y)=255;
-  img_stddev.col(crosshair_x)=255;
+
+	steerer->process_image(img_thres2);
+	double steer_value = steerer->get_steer_data();
 
   Mat steer=Mat::zeros(20,1920,CV_8U);
   steer.col( steer.cols /2 )=128;
-  if (left_sum+right_sum>0)
+  if (steerer->get_confidence()>0)
   {
-	  int x = (steer.cols-2) * left_sum / (left_sum+right_sum)    +1;
+	  int x = (steer_value/2.0 + 0.5)*steer.cols;
 	  
 	  if (x<1) x=1;
 	  if (x>=steer.cols-1) x=steer.cols-2;
@@ -1022,7 +838,7 @@ joystick.reset();
 	  steer.col(x+1)=240;
 	  
 	  
-	  joystick.steer(- 4* flopow(  (((float)left_sum / (left_sum+right_sum))-0.5  )*2.0 , 1.6)  ,0.05);
+	  joystick.steer( steer_value,0.05);
   }
   else
     joystick.steer(0.0);
@@ -1034,23 +850,18 @@ joystick.reset();
 
 
   //imshow("orig", img);
-  imshow("edit", img2);
+  imshow("edit", img);
   //imshow("perspective", img_perspective);
   //imshow("diff", img_diff);
-  imshow("hist", img_hist);
+  
   imshow("thres", img_thres);
   imshow("thres2", img_thres2);
   imshow("tracked", thread1_img);
-  //imshow("history", historized);
-  //imshow("stddev", img_stddev);
   imshow("steer", steer);
   
-  Mat road_color(100,100, CV_8UC3, Scalar(road_0, road_1, road_2));
-  imshow("road_color", road_color);
 
 
-
-  img_writer << img_diff;
+  //img_writer << img_diff;
   thres_writer << img_thres;
   thres2_writer << img_thres2;
 
