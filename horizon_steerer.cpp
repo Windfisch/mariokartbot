@@ -81,10 +81,12 @@ int HorizonSteerer::find_intersection_index(int x0, int y0, int x1, int y1, int*
   for(;;)
   {
     
+    if (x0<0 || x0>=xlen || y0<0 || y0>=ylen) break;
+    
     //setPixel(x0,y0);
     if (contour_map[x0][y0]>0) return contour_map[x0][y0]; // found intersection?
-    if (contour_map[x0][y0+1]>0) return contour_map[x0][y0+1];
-    if (contour_map[x0+1][y0]>0) return contour_map[x0+1][y0];
+    if (y0+1<ylen && contour_map[x0][y0+1]>0) return contour_map[x0][y0+1];
+    if (x0+1<xlen && contour_map[x0+1][y0]>0) return contour_map[x0+1][y0];
     
 		
     
@@ -408,7 +410,9 @@ int HorizonSteerer::find_bestquality_index(const vector<Point>& contour, double*
 	// ang_deriv[i] >= MAX_HYST * max_deriv \forall i \in [a,b] and
 	// ang_deriv[a-1,2,3], ang_deriv[b+1,2,3] < MAX_HYST * max_deriv
 	// where max_deriv = max_{i \in [a,b]} ang_deriv[i];
-	for (int j=3; j<contour.size()-3; j++)
+	
+	// TODO BUG: better assert contour.size()>3 somewhere
+	for (int j=3; j<(int)contour.size()-3; j++)
 	{
 		// search forward for a maximum, and the end of a maximum region.
 		if (angle_derivative[j] > lastmax) lastmax=angle_derivative[j];

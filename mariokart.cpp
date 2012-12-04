@@ -307,7 +307,7 @@ joystick.reset();
 
   
   SteerIface* steerer = new NaiveSteerer(xlen/2, 0.58*ylen);
-//  HorizonSteerer* hor_steerer = new HorizonSteerer(xlen,ylen);
+  HorizonSteerer* hor_steerer = new HorizonSteerer(xlen,ylen);
   RoadThresholderIface* road_thresholder = new RoadThresholder();
   
   while(1)
@@ -389,15 +389,17 @@ joystick.reset();
   */
 
   
-  img.row(crosshair_y)=Scalar(255,0,0);
-  img.col(crosshair_x)=Scalar(255,0,0);
-  img_thres2.row(crosshair_y)=128;
-  img_thres2.col(crosshair_x)=128;
 
 	steerer->process_image(img_thres2);
 	double steer_value = steerer->get_steer_data();
 	
-//	hor_steerer->process_image(img_thres2);
+	hor_steerer->process_image(img_thres2);
+
+
+  img.row(crosshair_y)=Scalar(255,0,0);
+  img.col(crosshair_x)=Scalar(255,0,0);
+  img_thres2.row(crosshair_y)=128;
+  img_thres2.col(crosshair_x)=128;
 
   Mat steer=Mat::zeros(20,1920,CV_8U);
   steer.col( steer.cols /2 )=128;
