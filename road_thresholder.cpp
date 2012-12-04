@@ -20,6 +20,7 @@
 
 
 #include <opencv2/opencv.hpp>
+#include <stdio.h>
 #include "road_thresholder.h"
 #include "util.h"
 
