@@ -49,6 +49,12 @@ void HorizonSteerer::process_image(const Mat& img_)
 	
 	int area_abs;
 	double area_ratio = only_retain_largest_region(img, &area_abs);
+	if (area_ratio<0) // no road detected at all?
+	{
+		steer_value=0.0;
+		confidence=0.0;
+		return;
+	}
 	
 	Mat tmp;
 	dilate(img, tmp, erode_kernel);
@@ -56,13 +62,13 @@ void HorizonSteerer::process_image(const Mat& img_)
 
 
 	Mat drawing;
-	double confidence;
 	find_steering_point(img, Point(img.cols/2, img.rows-2*img.rows/5), my_contour_map, drawing, &confidence);
+	steer_value=0.0; // TODO
 	imshow("drawing",drawing);
 }
 
-double HorizonSteerer::get_steer_data() { return 0.0; }
-double HorizonSteerer::get_confidence() { return 1.0; }
+double HorizonSteerer::get_steer_data() { return steer_value; }
+double HorizonSteerer::get_confidence() { return confidence; }
 
 
 
@@ -81,17 +87,15 @@ int HorizonSteerer::find_intersection_index(int x0, int y0, int x1, int y1, int*
   for(;;)
   {
     
-    if (x0<0 || x0>=xlen || y0<0 || y0>=ylen) break;
+    if (x0<0 || x0>=xlen || y0<0 || y0>=ylen) return -1;
     
-    //setPixel(x0,y0);
     if (contour_map[x0][y0]>0) return contour_map[x0][y0]; // found intersection?
     if (y0+1<ylen && contour_map[x0][y0+1]>0) return contour_map[x0][y0+1];
     if (x0+1<xlen && contour_map[x0+1][y0]>0) return contour_map[x0+1][y0];
     
-		
-    
-    
-    if (stop_at_endpoint && x0==x1 && y0==y1) break;
+    if (stop_at_endpoint && x0==x1 && y0==y1) return -1;
+
+
     e2 = 2*err;
     if (e2 > dy) { err += dy; x0 += sx; } /* e_xy+e_x > 0 */
     if (e2 < dx) { err += dx; y0 += sy; } /* e_xy+e_y < 0 */
@@ -220,12 +224,14 @@ double HorizonSteerer::only_retain_largest_region(Mat img, int* size)
 // in *size, if non-NULL, the size of the largest area is stored.
 // returns: ratio between the second-largest and largest region
 //          0.0 means "that's the only region", 1.0 means "both had the same size!"
+//			negative values mean "no area at all!"
 // can be interpreted as 1.0 - "confidence".
 {
 		int n_regions = annotate_regions(img);
+		if (n_regions == 0) return -1;
 		
 		// calculate the area of each region
-		int* area_cnt = new int[n_regions];
+		int* area_cnt = new int[n_regions]; // TODO: hier könnt man optimieren, wenn area_cnt==1
 		for (int i=0;i<n_regions;i++) area_cnt[i]=0;
 		int total_area_cnt=0;
 		
@@ -252,7 +258,7 @@ double HorizonSteerer::only_retain_largest_region(Mat img, int* size)
 		int maxi=0, maxa=area_cnt[0], maxi2=-1;
 		for (int i=1;i<n_regions;i++)
 		{
-			if (area_cnt[i]>maxa)
+			if (area_cnt[i]>=maxa)
 			{
 				maxa=area_cnt[i];
 				maxi2=maxi;
@@ -291,7 +297,7 @@ vector<Point>& HorizonSteerer::prepare_and_get_contour(vector< vector<Point> >& 
 	assert(low_idx!=NULL);
 	assert(high_y!=NULL);
 	assert(first_nonbottom_idx!=NULL);
-	
+	assert(contours.size()>=1);
 	
 	// find index of our road contour
 	int road_contour_idx=-1;
@@ -329,8 +335,14 @@ vector<Point>& HorizonSteerer::prepare_and_get_contour(vector< vector<Point> >& 
 	std::rotate(contour.begin(),contour.begin()+*low_idx,contour.end());
 
 	*first_nonbottom_idx = 0;
-	for (;*first_nonbottom_idx<contour.size();*first_nonbottom_idx++)
+	for (;*first_nonbottom_idx<contour.size();(*first_nonbottom_idx)++)
 		if (contour[*first_nonbottom_idx].y < contour[0].y-1) break;
+	
+	assert(*first_nonbottom_idx>=0);
+	if (!(*first_nonbottom_idx<contour.size()))
+	{
+		cout << "THIS REALLY SHOULD NOT HAPPEN: no nonbottom contour point found!" << endl;
+	}
 
 	// indices 0 to *first_nonbottom_idx-1 is now the bottom line of our contour.
 	
@@ -339,6 +351,8 @@ vector<Point>& HorizonSteerer::prepare_and_get_contour(vector< vector<Point> >& 
 
 void HorizonSteerer::init_contour_map(const vector<Point>& contour, int** contour_map)
 {
+	assert(contour_map!=NULL);
+	
 	for (int j=0;j<xlen;j++) // zero it
 		memset(contour_map[j],0,ylen*sizeof(**contour_map));
 		
@@ -368,8 +382,11 @@ double* HorizonSteerer::calc_contour_angles(const vector<Point>& contour, int fi
 	return angles;
 }
 
+// returns a new double[] or NULL, if contour is too small
 double* HorizonSteerer::calc_angle_deriv(double* angles, int first_nonbottom_idx, int size, int ang_smooth)
 {
+	if (first_nonbottom_idx+ang_smooth >= size-ang_smooth) return NULL; // not enough data for deriving!
+	
 	// calculate derivative of angle for each nonbottom contour point
 	double* angle_derivative = new double[size];
 	for (int j=first_nonbottom_idx+ang_smooth; j<size-ang_smooth; j++)
@@ -392,18 +409,19 @@ double* HorizonSteerer::calc_angle_deriv(double* angles, int first_nonbottom_idx
 
 
 
+// returns *bestquality_j or -1 on failure
 int HorizonSteerer::find_bestquality_index(const vector<Point>& contour, double* angle_derivative, int high_y, int first_nonbottom_idx, Mat& drawing,
-                           int* bestquality_j_out, int* bestquality_width_out, int* bestquality_out, int* bestquality_max_out)
+                                           int* bestquality_j_out, int* bestquality_width_out, int* bestquality_out, int* bestquality_max_out)
 {
 	assert(bestquality_out!=NULL);
 	assert(bestquality_j_out!=NULL);
 	assert(bestquality_width_out!=NULL);
 	
-	double lastmax=-999999;
+	double lastmax=-999999; // TODO that sucks :/
 	double bestquality=0.0;
 	double bestquality_max=0.0;
 	int bestquality_j=-1;
-	int bestquality_width=-1;
+	int bestquality_width=0;
 	
 	#define MAX_HYST 0.8
 	// search for "maximum regions"; i.e. intervals [a,b] with
@@ -411,7 +429,8 @@ int HorizonSteerer::find_bestquality_index(const vector<Point>& contour, double*
 	// ang_deriv[a-1,2,3], ang_deriv[b+1,2,3] < MAX_HYST * max_deriv
 	// where max_deriv = max_{i \in [a,b]} ang_deriv[i];
 	
-	// TODO BUG: better assert contour.size()>3 somewhere
+
+	// if contour.size() is too small, the for loop is never executed, and bestquality_j stays -1.
 	for (int j=3; j<(int)contour.size()-3; j++)
 	{
 		// search forward for a maximum, and the end of a maximum region.
@@ -461,27 +480,33 @@ int HorizonSteerer::find_bestquality_index(const vector<Point>& contour, double*
 				circle(drawing, contour[(j+j0)/2], 1, Scalar(128,0,0));
 			}
 			
-			lastmax=-999999; // reset lastmax, so the search can go on
+			lastmax=-999999; // reset lastmax, so the search can go on. TODO: ugly.
 		}
 	}
-	// now bestquality_j holds the index of the point with the best quality.
+	// now bestquality_j holds the index of the point with the best quality or -1 upon failure
 	
 	*bestquality_out = bestquality;
 	*bestquality_max_out = bestquality_max;
 	*bestquality_j_out = bestquality_j;
 	*bestquality_width_out = bestquality_width;
+	return bestquality_j;
 }
 
+// returns index of ideal steering point or -1 on failure
 int HorizonSteerer::find_ideal_line(vector<Point>& contour, Point origin_point, int** contour_map, int bestquality_j)
 // TODO: this code is crappy, slow, and uses brute force. did i mention it's crappy and slow?
 {
+	assert(bestquality_j>=0 && bestquality_j<contour.size());
+	assert(contour_map!=NULL);
+	
 	int intersection = find_intersection_index(origin_point.x,           origin_point.y, 
 											   contour[bestquality_j].x, contour[bestquality_j].y,        contour_map);
+	
 	int steering_point=-1;
 	
 	if (intersection<0)
 	{
-		cout << "THIS SHOULD NEVER HAPPEN" << endl;
+		cout << "THIS CAN NEVER HAPPEN" << endl;
 		return -1;
 	}
 	else
@@ -493,14 +518,16 @@ int HorizonSteerer::find_ideal_line(vector<Point>& contour, Point origin_point, 
 			// rotate the line to the left till it gets better
 			for (; xx>=0; xx--)
 			{
-				int intersection2 = find_intersection_index(origin_point.x, origin_point.y, xx, contour[bestquality_j].y, contour_map);
+				int intersection2 = find_intersection_index(origin_point.x, origin_point.y, xx, contour[bestquality_j].y, contour_map, false);
 				if (intersection2<0) // won't happen anyway
+				{
+					cout << "SHOULD NOT HAPPEN: no intersection" << endl;
 					break;
-				
-				if (intersection2>=bestquality_j) // now we intersect the opposite (=left) border
+				}
+				else if (intersection2>=bestquality_j) // now we intersect the opposite (=left) border
 				{
 					if (contour[intersection2].y>=lastheight) // we intersect at a lower = worse point?
-						xx++;                                 // then undo last step
+						xx++;                                 // then undo the last step
 						
 					break;
 				}
@@ -512,14 +539,16 @@ int HorizonSteerer::find_ideal_line(vector<Point>& contour, Point origin_point, 
 			// rotate the line to the right till it gets better
 			for (; xx<xlen; xx++)
 			{
-				int intersection2 = find_intersection_index(origin_point.x, origin_point.y, xx, contour[bestquality_j].y, contour_map);
-				if (intersection2<0)// won't happen anyway
+				int intersection2 = find_intersection_index(origin_point.x, origin_point.y, xx, contour[bestquality_j].y, contour_map, false);
+				if (intersection2<0) // won't happen anyway
+				{
+					cout << "SHOULD NOT HAPPEN: no intersection" << endl;
 					break;
-				
-				if (intersection2<=bestquality_j) // now we intersect the opposite (=right) border
+				}
+				else if (intersection2<=bestquality_j) // now we intersect the opposite (=right) border
 				{
 					if (contour[intersection2].y>=lastheight) // we intersect at a lower = worse point?
-						xx--;                                 // then undo last step
+						xx--;                                 // then undo the last step
 						
 					break;
 				}
@@ -534,9 +563,8 @@ int HorizonSteerer::find_ideal_line(vector<Point>& contour, Point origin_point, 
 }
 
 
-void HorizonSteerer::draw_it_all(Mat drawing, vector< vector<Point> >& contours, const vector<Vec4i>& hierarchy, int first_nonbottom_idx, vector<Point>& contour,
-                 double* angles, double* angle_derivative, int bestquality_j, int bestquality_width, int bestquality,
-                 int steering_point, Point origin_point)
+void HorizonSteerer::draw_angles_and_contour(Mat drawing, vector< vector<Point> >& contours, const vector<Vec4i>& hierarchy, int first_nonbottom_idx, vector<Point>& contour,
+                 double* angles, double* angle_derivative)
 {
 	// Draw contours
 	drawContours(drawing, contours, -1, Scalar(255,0,0), 1, 8, hierarchy);
@@ -564,7 +592,13 @@ void HorizonSteerer::draw_it_all(Mat drawing, vector< vector<Point> >& contours,
 		//circle(drawing, contour[j], 2, col);
 		set_pixel(drawing, contour[j], col);
 	}
-	
+}
+void HorizonSteerer::draw_it_all(Mat drawing, vector< vector<Point> >& contours, const vector<Vec4i>& hierarchy, int first_nonbottom_idx, vector<Point>& contour,
+                 double* angles, double* angle_derivative, int bestquality_j, int bestquality_width, int bestquality,
+                 int steering_point, Point origin_point, double confidence)
+{
+	draw_angles_and_contour(drawing, contours, hierarchy, first_nonbottom_idx, contour, angles, angle_derivative);
+		
 	// draw the point where the left touches the right road border
 	circle(drawing, contour[bestquality_j], 3, Scalar(255,255,0));
 	circle(drawing, contour[bestquality_j], 2, Scalar(255,255,0));
@@ -585,16 +619,21 @@ void HorizonSteerer::draw_it_all(Mat drawing, vector< vector<Point> >& contours,
 	
 	if (steering_point>=0) // should be always true
 		line(drawing, contour[steering_point], origin_point, Scalar(0,255,255));
+	
+	rectangle(drawing, Point(0.25*xlen-2, 100-2), Point (0.75*xlen+2, 150+2), Scalar(255,255,255));
+	rectangle(drawing, Point(0.25*xlen,   100),   Point ((0.25+0.5*confidence)*xlen, 150), Scalar(0,0,200*confidence+50), CV_FILLED);
 }
 
 #define SMOOTHEN_BOTTOM 20
 #define SMOOTHEN_MIDDLE 7
 #define ANG_SMOOTH 9
-// return the index of the point to steer to.
-int HorizonSteerer::find_steering_point(Mat orig_img, Point origin_point, int** contour_map, Mat& drawing, double* confidence) // orig_img is a binary image
+// return the index of the point to steer to, or -1 upon error
+int HorizonSteerer::find_steering_point(Mat orig_img, Point origin_point, int** contour_map, Mat& drawing, double* confidence)
+// orig_img is a binary image with only one region
 // confidence is between 0.0 (not sure at all) and 1.0 (definitely sure)
 {
 	assert(confidence!=NULL);
+	assert(contour_map!=NULL);
 	
 	Mat img;
 	orig_img.copyTo(img); // this is needed because findContours destroys its input.
@@ -605,9 +644,17 @@ int HorizonSteerer::find_steering_point(Mat orig_img, Point origin_point, int** 
 
 	findContours(img, contours, hierarchy, CV_RETR_TREE, CV_CHAIN_APPROX_NONE, Point(0, 0));
 	
+	assert(contours.size()>=1);
+	
 	int low_y, low_idx, high_y, first_nonbottom_idx;
 	vector<Point>& contour = prepare_and_get_contour(contours, hierarchy,
 	                                                 &low_y, &low_idx, &high_y, &first_nonbottom_idx);
+	if (! (first_nonbottom_idx<contour.size()))
+	{
+		drawContours(drawing, contours, -1, Scalar(255,0,0), 1, 8, hierarchy);
+		*confidence=0.0;
+		return -1;
+	}
 	                                                 
 	init_contour_map(contour, contour_map);
 	
@@ -615,24 +662,39 @@ int HorizonSteerer::find_steering_point(Mat orig_img, Point origin_point, int** 
 	double* angles = calc_contour_angles(contour, first_nonbottom_idx, SMOOTHEN_MIDDLE, SMOOTHEN_BOTTOM);
 	double* angle_derivative = calc_angle_deriv(angles, first_nonbottom_idx, contour.size(), ANG_SMOOTH);
 	
+	if (angle_derivative == NULL)
+	{
+		drawContours(drawing, contours, -1, Scalar(255,0,0), 1, 8, hierarchy);
+		*confidence=0.0;
+		delete [] angles;
+		return -1;
+	}
+	
 	int bestquality, bestquality_j, bestquality_width, bestquality_max;
-	find_bestquality_index(contour, angle_derivative, high_y, first_nonbottom_idx, drawing,
-	                       &bestquality_j, &bestquality_width, &bestquality, &bestquality_max);
+	if (0 > find_bestquality_index(contour, angle_derivative, high_y, first_nonbottom_idx, drawing,
+	                               &bestquality_j, &bestquality_width, &bestquality, &bestquality_max))
+	{
+		draw_angles_and_contour(drawing, contours, hierarchy, first_nonbottom_idx, contour, angles, angle_derivative);
+		*confidence=0.0;
+		delete [] angles;
+		delete [] angle_derivative;
+		return -1;
+	}
 	
 	// now we have a naive steering point. the way to it might lead
 	// us offroad, however.
 
 	int steering_point=find_ideal_line(contour, origin_point, contour_map, bestquality_j);
 
+	*confidence = (bestquality-1.0) / 7.0;
+	if (*confidence<0.0) *confidence=0;
+	if (*confidence>1.0) *confidence=1.0;
 	
-	draw_it_all(drawing, contours, hierarchy, first_nonbottom_idx, contour, angles, angle_derivative,bestquality_j,bestquality_width,bestquality_max,steering_point, origin_point);
+	draw_it_all(drawing, contours, hierarchy, first_nonbottom_idx, contour, angles, angle_derivative,bestquality_j,bestquality_width,bestquality_max,steering_point, origin_point, *confidence);
 	cout << bestquality << "\t" << bestquality_max<<endl;
 	delete [] angle_derivative;
 	delete [] angles;
 	
-	*confidence = (bestquality-1.0) / 3.0;
-	if (*confidence<0.0) *confidence=0;
-	if (*confidence>1.0) *confidence=1.0;
 	return steering_point;
 }
 

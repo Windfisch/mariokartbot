@@ -53,13 +53,18 @@ private:
 	                           int* bestquality_j_out, int* bestquality_width_out, int* bestquality_out, int* bestquality_max_out);
 	void draw_it_all(Mat drawing, vector< vector<Point> >& contours, const vector<Vec4i>& hierarchy, int first_nonbottom_idx, vector<Point>& contour,
 	                 double* angles, double* angle_derivative, int bestquality_j, int bestquality_width, int bestquality,
-	                 int steering_point, Point origin_point);
+	                 int steering_point, Point origin_point, double confidence);
+	void draw_angles_and_contour(Mat drawing, vector< vector<Point> >& contours, const vector<Vec4i>& hierarchy, int first_nonbottom_idx, vector<Point>& contour,
+	                             double* angles, double* angle_derivative);
 	int find_steering_point(Mat orig_img, Point origin_point, int** contour_map, Mat& drawing, double* confidence);
 
 	int xlen;
 	int ylen;
 	Mat erode_kernel;
 	int** my_contour_map;
+	
+	double confidence;
+	double steer_value;
 };
 
 #endif
