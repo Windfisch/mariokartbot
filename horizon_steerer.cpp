@@ -62,8 +62,26 @@ void HorizonSteerer::process_image(const Mat& img_)
 
 
 	Mat drawing;
-	find_steering_point(img, Point(img.cols/2, img.rows-2*img.rows/5), my_contour_map, drawing, &confidence);
-	steer_value=0.0; // TODO
+	Point origin_point(img.cols/2, img.rows-2*img.rows/10);
+	Point steering_point = find_steering_point(img, origin_point, my_contour_map, drawing, &confidence);
+	if (confidence > 0.0 && steering_point != origin_point)
+	{
+		// negative values mean "steer left", positive mean "steer right"
+		double angle = -atan2(origin_point.x - steering_point.x, origin_point.y- steering_point.y) *180/3.1415192654;
+		if (angle > 90 || angle < -90)
+		{
+			confidence=0.0;
+			steer_value=0.0;
+		}
+		else
+		{
+			steer_value=flopow(angle/90.0,1)/2  ;
+		}
+	}
+	else
+	{
+		steer_value=0.0;
+	}
 	imshow("drawing",drawing);
 }
 
@@ -627,8 +645,8 @@ void HorizonSteerer::draw_it_all(Mat drawing, vector< vector<Point> >& contours,
 #define SMOOTHEN_BOTTOM 20
 #define SMOOTHEN_MIDDLE 7
 #define ANG_SMOOTH 9
-// return the index of the point to steer to, or -1 upon error
-int HorizonSteerer::find_steering_point(Mat orig_img, Point origin_point, int** contour_map, Mat& drawing, double* confidence)
+// return the point to steer to, or origin_point upon error
+Point HorizonSteerer::find_steering_point(Mat orig_img, Point origin_point, int** contour_map, Mat& drawing, double* confidence)
 // orig_img is a binary image with only one region
 // confidence is between 0.0 (not sure at all) and 1.0 (definitely sure)
 {
@@ -653,7 +671,7 @@ int HorizonSteerer::find_steering_point(Mat orig_img, Point origin_point, int** 
 	{
 		drawContours(drawing, contours, -1, Scalar(255,0,0), 1, 8, hierarchy);
 		*confidence=0.0;
-		return -1;
+		return origin_point;
 	}
 	                                                 
 	init_contour_map(contour, contour_map);
@@ -667,7 +685,7 @@ int HorizonSteerer::find_steering_point(Mat orig_img, Point origin_point, int** 
 		drawContours(drawing, contours, -1, Scalar(255,0,0), 1, 8, hierarchy);
 		*confidence=0.0;
 		delete [] angles;
-		return -1;
+		return origin_point;
 	}
 	
 	int bestquality, bestquality_j, bestquality_width, bestquality_max;
@@ -678,7 +696,7 @@ int HorizonSteerer::find_steering_point(Mat orig_img, Point origin_point, int** 
 		*confidence=0.0;
 		delete [] angles;
 		delete [] angle_derivative;
-		return -1;
+		return origin_point;
 	}
 	
 	// now we have a naive steering point. the way to it might lead
@@ -695,6 +713,14 @@ int HorizonSteerer::find_steering_point(Mat orig_img, Point origin_point, int** 
 	delete [] angle_derivative;
 	delete [] angles;
 	
-	return steering_point;
+	if (steering_point>=0)
+	{
+		return contour[steering_point];
+	}
+	else
+	{
+		*confidence=0.0;
+		return origin_point;
+	}
 }
 

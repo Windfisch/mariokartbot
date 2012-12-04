@@ -56,7 +56,7 @@ private:
 	                 int steering_point, Point origin_point, double confidence);
 	void draw_angles_and_contour(Mat drawing, vector< vector<Point> >& contours, const vector<Vec4i>& hierarchy, int first_nonbottom_idx, vector<Point>& contour,
 	                             double* angles, double* angle_derivative);
-	int find_steering_point(Mat orig_img, Point origin_point, int** contour_map, Mat& drawing, double* confidence);
+	Point find_steering_point(Mat orig_img, Point origin_point, int** contour_map, Mat& drawing, double* confidence);
 
 	int xlen;
 	int ylen;

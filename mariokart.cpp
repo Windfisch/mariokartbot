@@ -34,6 +34,7 @@
 
 #include "util.h"
 #include "steer_interface.h"
+#include "steer_accumulator.h"
 #include "naive_steerer.h"
 #include "horizon_steerer.h"
 #include "road_thresholder_iface.h"
@@ -306,8 +307,14 @@ joystick.reset();
 	}
 
   
-  SteerIface* steerer = new NaiveSteerer(xlen/2, 0.58*ylen);
+  SteerAccumulator* steerer = new SteerAccumulator();
+  NaiveSteerer* naive_steerer = new NaiveSteerer(xlen/2, 0.58*ylen);
   HorizonSteerer* hor_steerer = new HorizonSteerer(xlen,ylen);
+
+  steerer->add_steerer(naive_steerer, 1.0);
+  steerer->add_steerer(hor_steerer,   5.0);
+
+
   RoadThresholderIface* road_thresholder = new RoadThresholder();
   
   while(1)

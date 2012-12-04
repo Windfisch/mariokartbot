@@ -23,22 +23,22 @@
 
 using namespace std;
 
-void SteerAccumulator::add_steerer(SteerIface* steerer)
+void SteerAccumulator::add_steerer(SteerIface* steerer, double weight)
 {
-	steerers.push_back(steerer);
+	steerers.push_back(entry(steerer,weight));
 }
 
 void SteerAccumulator::process_image(const Mat& img)
 {
-	for (list<SteerIface*>::iterator it = steerers.begin(); it!=steerers.end(); ++it)
-		(*it)->process_image(img);
+	for (list<entry>::iterator it = steerers.begin(); it!=steerers.end(); ++it)
+		it->st->process_image(img);
 }
 
 double SteerAccumulator::get_steer_data()
 {
 	double sum=0;
-	for (list<SteerIface*>::iterator it = steerers.begin(); it!=steerers.end(); ++it)
-		sum+=(*it)->get_steer_data() * (*it)->get_confidence();
+	for (list<entry>::iterator it = steerers.begin(); it!=steerers.end(); ++it)
+		sum+=it->st->get_steer_data() * it->st->get_confidence() * it->weight;
 	
 	double confidence = get_confidence();
 	
@@ -48,7 +48,7 @@ double SteerAccumulator::get_steer_data()
 double SteerAccumulator::get_confidence()
 {
 	double sum=0;
-	for (list<SteerIface*>::iterator it = steerers.begin(); it!=steerers.end(); ++it)
-		sum+=(*it)->get_confidence();
+	for (list<entry>::iterator it = steerers.begin(); it!=steerers.end(); ++it)
+		sum+=it->st->get_confidence() * it->weight;
 	return sum;
 }

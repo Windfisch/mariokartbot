@@ -34,14 +34,21 @@ class SteerAccumulator : SteerIface
 	public:
 		virtual ~SteerAccumulator() {};
 		
-		void add_steerer(SteerIface* steerer);
+		void add_steerer(SteerIface* steerer, double weight=1.0);
 		
 		virtual void process_image(const Mat& img);
 		virtual double get_steer_data();
 		virtual double get_confidence();
 	
 	private:
-		std::list<SteerIface*> steerers;
+		struct entry
+		{
+			SteerIface* st;
+			double weight;
+			
+			entry(SteerIface* s, double w) { st=s; weight=w; }
+		};
+		std::list<entry> steerers;
 };
 
 #endif
