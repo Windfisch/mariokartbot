@@ -34,16 +34,11 @@ HorizonSteerer::HorizonSteerer(int xlen_, int ylen_)
 	xlen=xlen_;
 	ylen=ylen_;
 	
-	int** contour_map;
-	contour_map=new int*[xlen];
+	my_contour_map=new int*[xlen];
 	for (int i=0;i<xlen;i++)
-		contour_map[i]=new int[ylen];
+		my_contour_map[i]=new int[ylen];
 		
 	erode_kernel = circle_mat(10);
-
-	contour_map=new int*[xlen];
-	for (int i=0;i<xlen;i++)
-		contour_map[i]=new int[ylen];
 }
 
 
@@ -62,8 +57,8 @@ void HorizonSteerer::process_image(const Mat& img_)
 
 	Mat drawing;
 	double confidence;
-	find_steering_point(img, Point(img.cols/2, img.rows-2*img.rows/5), contour_map, drawing, &confidence);
-	
+	find_steering_point(img, Point(img.cols/2, img.rows-2*img.rows/5), my_contour_map, drawing, &confidence);
+	imshow("drawing",drawing);
 }
 
 double HorizonSteerer::get_steer_data() { return 0.0; }

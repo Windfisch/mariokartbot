@@ -15,6 +15,9 @@ joystick.o: joystick.cpp os.h
 detect_road_borders: detect_road_borders.cpp
 	g++ `pkg-config --libs --cflags opencv` -g $> -o $@
 
+detect_road_borders_with_horizon_steerer: detect_road_borders_with_horizon_steerer.cpp horizon_steerer.o util.o
+	g++ `pkg-config --libs --cflags opencv` -g $> -o $@
+
 test_detect: detect_road_borders
 	./detect_road_borders test.mpg
 

@@ -59,7 +59,7 @@ private:
 	int xlen;
 	int ylen;
 	Mat erode_kernel;
-	int** contour_map;
+	int** my_contour_map;
 };
 
 #endif
