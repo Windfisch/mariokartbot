@@ -1,22 +1,3 @@
- *
- * Copyright 2012 Florian Jung <florian.a.jung@web.de>
- * 
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License Version 3
- * as published by the Free Software Foundation.
- * 
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
- * MA 02110-1301, USA.
- *
-
-
 This bot shall be able to play Mario Kart using the Mupen64Plus emulator.
 It works both on Linux and on FreeBSD, but there are some differences:
 	- under Linux, we can uinput to emulate a joystick. This works
@@ -50,3 +31,25 @@ wait for the small ghost to disappear. (You probably want to save the
 state using F5 now; in future, you can get here quickly with F7).
 
 Then press "ENTER" in the mariokart bot command window and enjoy :)
+
+
+
+
+ *
+ * Copyright 2012 Florian Jung <florian.a.jung@web.de>
+ * 
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License Version 3
+ * as published by the Free Software Foundation.
+ * 
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ * 
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
+ * MA 02110-1301, USA.
+ *
+
