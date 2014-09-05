@@ -35,6 +35,17 @@ Then press "ENTER" in the mariokart bot command window and enjoy :)
 
 
 
+------====== How to use ======------
+
+edit os.h and set your OS (if you use FreeBSD, you must patch mupen64plus!)
+edit mariokart.cpp and fix the startup of mupen,
+in mariokart.cpp, fix the window title the XorgGrabber uses
+
+
+
+
+
+
  *
  * Copyright 2012 Florian Jung <florian.a.jung@web.de>
  * 

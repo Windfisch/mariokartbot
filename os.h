@@ -1,2 +1,2 @@
-#define FREEBSD
-//#define LINUX
+//#define FREEBSD
+#define LINUX
