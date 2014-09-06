@@ -29,7 +29,7 @@
 #include <iostream>
 #include <fcntl.h>
 
-#ifdef LINUX
+#ifdef JOYSTICK_UINPUT
 #include <linux/input.h>
 #include <linux/uinput.h>
 #endif
@@ -43,7 +43,7 @@ using namespace std;
 
 #define THROTTLE_CNT_MAX 10
 
-#ifdef FREEBSD
+#ifdef JOYSTICK_PATCHEDINPUTPLUGIN
 static char* pack(const BUTTONS* buttons, char* buf)
 {
 	buf[0]= (buttons->A_BUTTON     ?  1 : 0) +
@@ -76,7 +76,7 @@ static char* pack(const BUTTONS* buttons, char* buf)
 
 
 
-#ifdef FREEBSD
+#ifdef JOYSTICK_PATCHEDINPUTPLUGIN
 Joystick::Joystick()
 {
 	if ((fifo_fd=open("/var/tmp/mupen64plus_ctl", O_WRONLY )) == -1) {throw string(strerror(errno));}
@@ -127,8 +127,8 @@ Joystick::~Joystick()
 {
 	close(fifo_fd);
 }
-#endif // FREEBSD
-#ifdef LINUX
+#endif // JOYSTICK_PATCHEDINPUTPLUGIN
+#ifdef JOYSTICK_UINPUT
 Joystick::Joystick()
 {
 	fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
@@ -185,6 +185,8 @@ void Joystick::steer(float dir, float dead_zone)
 	ev.code=ABS_X;
 	ev.value=5000+dir*5000;
 	write(fd, &ev, sizeof(ev));
+
+	cout << "steering" << dir << endl;
 }
 
 
@@ -218,7 +220,7 @@ void Joystick::reset()
 	cout << "A zeroed" << endl;
 }
 
-#endif // LINUX
+#endif // JOYSTICK_UINPUT
 
 
 void Joystick::throttle(float t)

@@ -24,7 +24,7 @@
 
 #include "os.h"
 
-#ifdef FREEBSD
+#ifdef JOYSTICK_PATCHEDINPUTPLUGIN
 typedef union {
     unsigned int Value;
     struct {
@@ -51,7 +51,7 @@ typedef union {
     };
 } BUTTONS;
 
-#endif // FREEBSD
+#endif // JOYSTICK_PATCHEDINPUTPLUGIN
 
 
 class Joystick
@@ -68,12 +68,12 @@ class Joystick
 		void reset();
 	
 	private:
-#ifdef FREEBSD
+#ifdef JOYSTICK_PATCHEDINPUTPLUGIN
 		BUTTONS buttons;
 		void send_data();
 		int fifo_fd;
 #endif
-#ifdef LINUX
+#ifdef JOYSTICK_UINPUT
 		int fd;
 #endif
 

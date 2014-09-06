@@ -203,7 +203,7 @@ int main(int argc, char* argv[])
   
   string tmp;
 
-#ifdef LINUX
+#ifdef JOYSTICK_UINPUT
 	Joystick joystick;
 	cout << "joystick initalized, now starting mupen." << endl;
 #endif
@@ -211,7 +211,7 @@ int main(int argc, char* argv[])
 // for mupen 1.x  if (fork()==0) { system("mupen64plus --nogui --noask ~/MarioKart64.rom"); exit(0); }
   if (fork()==0) { system("mupen64plus --windowed --resolution 640x480 ~/konsolenspiele/N64/MarioKart64.rom"); exit(0); }
 
-#ifdef FREEBSD
+#ifdef JOYSTICK_PATCHEDINPUTPLUGIN
   sleep(2);
   Joystick joystick;
 #endif
@@ -221,7 +221,7 @@ int main(int argc, char* argv[])
   joystick.reset();
   cout << "successfully reset joystick." << endl;
 
-/*  cout << "press enter to steer left" << endl;
+  cout << "press enter to steer left" << endl;
   getchar();
   
   
@@ -247,7 +247,7 @@ int main(int argc, char* argv[])
   
   cout << "A released." << endl;
   joystick.press_a(false);
-  getchar();*/
+  getchar();
   
   cout << "waiting for game to start, press enter when started." << endl;
   joystick.press_a(false);
