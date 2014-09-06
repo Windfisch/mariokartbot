@@ -191,7 +191,7 @@ void* thread1_func(void*)
 
 int main(int argc, char* argv[])
 {
-try {
+//try {
   
   
   if (sem_init(&thread1_go, 0, 0)) throw string("sem_init failed");
@@ -208,7 +208,8 @@ try {
 	cout << "joystick initalized, now starting mupen." << endl;
 #endif
   
-  if (fork()==0) { system("mupen64plus --nogui --noask ~/MarioKart64.rom"); exit(0); }
+// for mupen 1.x  if (fork()==0) { system("mupen64plus --nogui --noask ~/MarioKart64.rom"); exit(0); }
+  if (fork()==0) { system("mupen64plus --windowed --resolution 640x480 ~/konsolenspiele/N64/MarioKart64.rom"); exit(0); }
 
 #ifdef FREEBSD
   sleep(2);
@@ -255,7 +256,7 @@ try {
 joystick.reset();
 
 #ifdef LINUX
-  XorgGrabber capture("glN64");
+  XorgGrabber capture("Mupen64Plus");
 #endif
 #ifdef FREEBSD
   XorgGrabber capture("Mupen64Plus OpenGL Video");
@@ -453,15 +454,15 @@ joystick.reset();
   joystick.process();
 }
 
-} //try
-catch(string meh)
+//} //try
+/*catch(string meh)
 {
 	cout << "error: "<<meh<< endl;
 }
 catch(...)
 {
 	cout << "error!" << endl;
-}
+}*/
 
 sem_destroy(&thread1_go);
 sem_destroy(&thread1_done);
