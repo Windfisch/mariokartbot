@@ -1,6 +1,6 @@
-diff -ru mupen64plus-bundle-src-1.99.4-orig/source/mupen64plus-input-sdl/src/plugin.c mupen64plus-bundle-src-1.99.4/source/mupen64plus-input-sdl/src/plugin.c
---- mupen64plus-bundle-src-1.99.4-orig/source/mupen64plus-input-sdl/src/plugin.c	2012-11-20 20:38:20.000000000 +0100
-+++ mupen64plus-bundle-src-1.99.4/source/mupen64plus-input-sdl/src/plugin.c	2012-11-26 18:17:51.000000000 +0100
+diff -u --recursive a/mupen64plus-input-sdl-src-2.0/src/plugin.c b/mupen64plus-input-sdl-src-2.0/src/plugin.c
+--- a/mupen64plus-input-sdl-src-2.0/src/plugin.c	2014-09-07 01:36:37.462792158 +0200
++++ b/mupen64plus-input-sdl-src-2.0/src/plugin.c	2014-09-07 01:36:37.460792158 +0200
 @@ -24,6 +24,12 @@
  #include <stdio.h>
  #include <stdlib.h>
@@ -14,7 +14,7 @@ diff -ru mupen64plus-bundle-src-1.99.4-orig/source/mupen64plus-input-sdl/src/plu
  
  #include <SDL.h>
  
-@@ -133,6 +139,151 @@
+@@ -136,6 +142,151 @@
  
  static CONTROL temp_core_controlinfo[4];
  
@@ -166,7 +166,7 @@ diff -ru mupen64plus-bundle-src-1.99.4-orig/source/mupen64plus-input-sdl/src/plu
  /* Mupen64Plus plugin functions */
  EXPORT m64p_error CALL PluginStartup(m64p_dynlib_handle CoreLibHandle, void *Context,
                                     void (*DebugCallback)(void *, int, const char *))
-@@ -454,6 +605,12 @@
+@@ -464,6 +615,12 @@
      SDL_Event event;
      unsigned char mstate;
  
@@ -177,11 +177,11 @@ diff -ru mupen64plus-bundle-src-1.99.4-orig/source/mupen64plus-input-sdl/src/plu
 +	}
 +
      // Handle keyboard input first
-     doSdlKeys(SDL_GetKeyState(NULL));
+     doSdlKeys(SDL_GetKeyboardState(NULL));
      doSdlKeys(myKeyState);
-@@ -596,7 +753,21 @@
+@@ -614,7 +771,21 @@
  #ifdef _DEBUG
-     DebugMessage(M64MSG_VERBOSE, "Controller #%d value: 0x%8.8X\n", Control, *(int *)&controller[Control].buttons );
+     DebugMessage(M64MSG_VERBOSE, "Controller #%d value: 0x%8.8X", Control, *(int *)&controller[Control].buttons );
  #endif
 -    *Keys = controller[Control].buttons;
 +    

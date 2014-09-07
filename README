@@ -37,7 +37,11 @@ Then press "ENTER" in the mariokart bot command window and enjoy :)
 
 ------====== How to use ======------
 
-edit os.h and set your OS (if you use FreeBSD, you must patch mupen64plus!)
+edit os.h and set your OS
+if you don't use the uinput method (hint: you don't), you 
+	must apply mupen64plus-input-sdl.patch to the emulator.
+	in gentoo, it is sufficient to copy the patch to
+	/etc/portage/patches/games-emulation/mupen64plus-input-sdl/
 edit mariokart.cpp and fix the startup of mupen,
 in mariokart.cpp, fix the window title the XorgGrabber uses
 if you use bsdmake, run ./convert_to_bsd_makefile.sh first.
