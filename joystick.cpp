@@ -41,7 +41,7 @@
 
 using namespace std;
 
-#define THROTTLE_CNT_MAX 10
+#define THROTTLE_CNT_MAX 6
 
 #ifdef JOYSTICK_PATCHEDINPUTPLUGIN
 static char* pack(const BUTTONS* buttons, char* buf)

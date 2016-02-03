@@ -23,6 +23,7 @@
 #include <iostream>
 #include <math.h>
 #include <opencv2/opencv.hpp>
+#include <assert.h>
 
 using namespace std;
 using namespace cv;
@@ -580,7 +581,7 @@ int find_steering_point(Mat orig_img, Point origin_point, int** contour_map, Mat
 	vector<vector<Point> > contours;
 	vector<Vec4i> hierarchy;
 
-	findContours(img, contours, hierarchy, CV_RETR_TREE, CV_CHAIN_APPROX_NONE, Point(0, 0));
+	findContours(img, contours, hierarchy, RETR_TREE, CHAIN_APPROX_NONE, Point(0, 0));
 	
 	int low_y, low_idx, high_y, first_nonbottom_idx;
 	vector<Point>& contour = prepare_and_get_contour(img.cols, img.rows, contours, hierarchy,
@@ -660,7 +661,7 @@ int main(int argc, char* argv[])
 			continue;
 		}
 		
-		cvtColor(frame, tmp, CV_RGB2GRAY);
+		cvtColor(frame, tmp, COLOR_RGB2GRAY);
 		threshold(tmp, thres, 132, 255, THRESH_BINARY);
 		dilate(thres,tmp,Mat());
 		erode(tmp,thres,Mat());

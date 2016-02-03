@@ -63,6 +63,8 @@ using namespace cv;
 #define HIST_SMOOTH 7
 
 //#define NO_BRIGHTNESS // will man nicht, nur zu demonstrationszwecken
+#define ADJUST_BRIGHTNESS
+#define ADJUST_BRIGHTNESS_EXP 3
 
 #define ERODE_RADIUS_2D 4
 
@@ -188,6 +190,13 @@ void* thread1_func(void*)
 	}
 }
 
+float mypow(float base, float exp)
+{
+	if (base >= 0)
+		return pow(base,exp);
+	else
+		return -pow(-base,exp);
+}
 
 int main(int argc, char* argv[])
 {
@@ -262,6 +271,11 @@ joystick.reset();
   XorgGrabber capture("Mupen64Plus OpenGL Video");
 #endif
 
+  uchar mypow_lut[256];
+  for (int i=0; i<256; i++)
+  	mypow_lut[i] = mypow(((((float)i)-128.)/128.), ADJUST_BRIGHTNESS_EXP)*128.+128.;
+
+
   Mat transform;
   
   bool first=true;
@@ -277,7 +291,7 @@ joystick.reset();
   namedWindow("edit");
   setMouseCallback("edit", mouse_callback, NULL);
   
-  joystick.throttle(0.5);
+  joystick.throttle(2./6);
   
   
   VideoWriter img_writer, thres_writer, thres2_writer;
@@ -352,6 +366,22 @@ joystick.reset();
       data+=img.step[1];
     }
   }
+  #endif
+  
+  #ifdef ADJUST_BRIGHTNESS
+  Mat hsv;
+  cvtColor(img, hsv, CV_BGR2HSV);
+  for (int y=0; y<hsv.rows;y++)
+  {
+    uchar* data=hsv.ptr<uchar>(y) + 2;
+    for (int x = 0; x< hsv.cols; x++)
+    {
+      *data= mypow_lut[*data];
+      data+=3;
+    }
+  }
+
+  cvtColor(hsv, img, CV_HSV2BGR);
   #endif
   
   
